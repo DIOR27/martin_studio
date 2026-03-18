@@ -1,0 +1,72 @@
+{
+  "name": "martin-studio",
+  "displayName": "MARTIN Studio",
+  "description": "Visual editor for MARTIN Framework with drag and drop, property inspector and code generation.",
+  "version": "0.0.1",
+  "publisher": "martin-framework",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:martinStudio.openStudio",
+    "onCommand:martinStudio.openCurrentFile"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "martinStudio.openStudio",
+        "title": "MARTIN Studio: Open Designer"
+      },
+      {
+        "command": "martinStudio.openCurrentFile",
+        "title": "Open in MARTIN Studio",
+        "icon": {
+          "light": "media/martin-icon.svg",
+          "dark": "media/martin-icon.svg"
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "martinStudio.openCurrentFile",
+          "when": "resourceExtname == .py",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "martinStudio.openCurrentFile",
+          "when": "resourceExtname == .py",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "martinStudio.openCurrentFile",
+          "when": "resourceExtname == .py",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MARTIN Studio",
+      "properties": {
+        "martinStudio.frameworkPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the martin_framework repository used to load martin.studio metadata."
+        },
+        "martinStudio.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Python executable used by MARTIN Studio to load the widget catalog."
+        }
+      }
+    }
+  }
+}
