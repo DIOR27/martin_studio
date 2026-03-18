@@ -897,7 +897,8 @@ function nodeToExpression(node, depth) {
 function pyValue(value, depth) {
   const indent = "    ".repeat(depth);
   if (typeof value === "string") return pyString(value);
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "True" : "False";
   if (value === null) return "None";
   if (Array.isArray(value)) {
     if (!value.length) return "[]";
