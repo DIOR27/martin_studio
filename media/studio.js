@@ -6,8 +6,18 @@ const state = {
   selectedId: null,
   codeTab: "frontend",
   sourceContext: null,
+  projectContext: null,
   lastSavedTarget: "",
   previewHtml: "",
+  activeCodeFiles: {
+    frontend: "",
+    backend: "",
+  },
+  collapsed: {
+    palette: false,
+    inspector: false,
+    bottom: false,
+  },
 };
 
 const POSITIONAL_PROP_MAP = {
@@ -43,8 +53,10 @@ function onMessage(event) {
     state.catalog = message.payload.catalog;
     state.design = message.payload.design;
     state.sourceContext = message.payload.sourceContext || null;
+    state.projectContext = message.payload.projectContext || null;
     state.previewHtml = message.payload.previewHtml || "";
     state.selectedId = state.design.root.id;
+    initializeCodeFileSelection();
     render();
     return;
   }
@@ -56,7 +68,21 @@ function onMessage(event) {
   if (message.type === "saveComplete") {
     state.lastSavedTarget = message.payload.target || "";
     state.previewHtml = message.payload.previewHtml || state.previewHtml;
+    state.projectContext = message.payload.projectContext || state.projectContext;
+    state.catalog = message.payload.catalog || state.catalog;
+    initializeCodeFileSelection();
     render();
+  }
+}
+
+function initializeCodeFileSelection() {
+  for (const kind of ["frontend", "backend"]) {
+    const files = getCodeFiles(kind);
+    const existing = state.activeCodeFiles[kind];
+    if (existing && files.some((file) => file.path === existing)) {
+      continue;
+    }
+    state.activeCodeFiles[kind] = files[0] ? files[0].path : "__generated__";
   }
 }
 
@@ -67,19 +93,23 @@ function render() {
   }
 
   document.getElementById("app").innerHTML = `
-    <div class="studio-shell">
+    <div class="studio-shell ${state.collapsed.palette ? "is-palette-collapsed" : ""} ${state.collapsed.inspector ? "is-inspector-collapsed" : ""} ${state.collapsed.bottom ? "is-bottom-collapsed" : ""}">
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark"></span>
           <h1>MARTIN Studio</h1>
           <span class="pill">${state.catalog.widget_count} widgets</span>
           ${state.sourceContext ? `<span class="hint">Source: ${escapeHtml(state.sourceContext.relativePath)}</span>` : `<span class="hint">Source: design JSON</span>`}
+          ${state.projectContext && state.projectContext.routePath ? `<span class="pill route-pill">Route ${escapeHtml(state.projectContext.routePath)}</span>` : ""}
           ${state.lastSavedTarget ? `<span class="pill">Saved: ${escapeHtml(state.lastSavedTarget)}</span>` : ""}
         </div>
         <div class="topbar-actions">
-          <button class="btn" data-action="reload-catalog">Reload catalog</button>
+          ${state.sourceContext ? `<button class="btn" data-action="open-page-source">Open page file</button>` : ""}
+          ${state.projectContext && state.projectContext.livePreviewUrl ? `<button class="btn icon-topbar-btn" data-action="open-browser-preview" title="Open preview in browser tab" aria-label="Open preview in browser tab">🌐</button>` : ""}
+          ${state.projectContext && state.projectContext.livePreviewUrl ? `<button class="btn icon-topbar-btn play-btn" data-action="toggle-preview-server" title="${state.projectContext.livePreviewOnline ? "Stop martin run" : "Run martin run"}" aria-label="${state.projectContext.livePreviewOnline ? "Stop martin run" : "Run martin run"}">${state.projectContext.livePreviewOnline ? "■" : "▶"}</button>` : ""}
+          <button class="btn icon-topbar-btn" data-action="reload-catalog" title="Reload catalog" aria-label="Reload catalog">↻</button>
           <button class="btn" data-action="open-source">Open design JSON</button>
-          <button class="btn" data-action="save-design">${state.sourceContext ? "Save to source" : "Save"}</button>
+          <button class="btn icon-topbar-btn" data-action="save-design" title="${state.sourceContext ? "Save to source" : "Save"}" aria-label="${state.sourceContext ? "Save to source" : "Save"}">💾</button>
         </div>
       </header>
       <aside class="sidebar">${renderPalette()}</aside>
@@ -92,7 +122,7 @@ function render() {
       <aside class="inspector">${renderInspector()}</aside>
       <section class="code-panel">
         <div class="tabs">
-          <button class="tab ${state.codeTab === "preview" ? "is-active" : ""}" data-tab="preview">Preview</button>
+          <button class="tab panel-toggle ${state.collapsed.bottom ? "is-active" : ""}" data-action="toggle-panel" data-panel="bottom" title="${state.collapsed.bottom ? "Expand bottom panel" : "Collapse bottom panel"}">${state.collapsed.bottom ? "▴" : "▾"}</button>
           <button class="tab ${state.codeTab === "frontend" ? "is-active" : ""}" data-tab="frontend">Frontend</button>
           <button class="tab ${state.codeTab === "backend" ? "is-active" : ""}" data-tab="backend">Backend</button>
           <button class="tab ${state.codeTab === "json" ? "is-active" : ""}" data-tab="json">Design JSON</button>
@@ -122,7 +152,10 @@ function renderPalette() {
   }
 
   return `
-    <p class="section-title">Palette</p>
+    <div class="panel-head">
+      <p class="section-title">Palette</p>
+      <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="palette" title="${state.collapsed.palette ? "Expand palette" : "Collapse palette"}">${state.collapsed.palette ? "▸" : "◂"}</button>
+    </div>
     ${Array.from(groups.entries()).map(([category, widgets]) => `
       <section class="catalog-group">
         <h3>${escapeHtml(category)}</h3>
@@ -181,7 +214,10 @@ function renderInspector() {
   const editableParams = widget.params.filter((param) => !param.structural && param.name !== "style");
 
   return `
-    <p class="section-title">Inspector</p>
+    <div class="panel-head">
+      <p class="section-title">Inspector</p>
+      <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="inspector" title="${state.collapsed.inspector ? "Expand inspector" : "Collapse inspector"}">${state.collapsed.inspector ? "▸" : "▸"}</button>
+    </div>
     <h2 style="margin:0 0 8px">${escapeHtml(node.type)}</h2>
     <p class="hint" style="margin:0 0 16px">${escapeHtml(widget.summary || "")}</p>
     <div class="props-grid">
@@ -376,9 +412,6 @@ function renderKeyValueEditorRow(node, param, key, value, index) {
 }
 
 function renderCodeTab() {
-  if (state.codeTab === "preview") {
-    return "";
-  }
   if (state.codeTab === "json") {
     return JSON.stringify(state.design, null, 2);
   }
@@ -389,11 +422,8 @@ function renderCodeTab() {
 }
 
 function renderBottomPanel() {
-  if (state.codeTab === "preview") {
-    if (state.previewHtml) {
-      return `<div class="preview-pane"><iframe class="preview-frame" sandbox="allow-scripts allow-same-origin" srcdoc="${escapeHtml(state.previewHtml)}"></iframe></div>`;
-    }
-    return `<div class="preview-pane">${renderPreviewNode(state.design.root)}</div>`;
+  if (state.codeTab === "frontend" || state.codeTab === "backend") {
+    return renderCodeWorkspace(state.codeTab);
   }
   return `<textarea class="code-block" readonly>${escapeHtml(renderCodeTab())}</textarea>`;
 }
@@ -402,6 +432,26 @@ function bindGlobalActions() {
   document.querySelector('[data-action="save-design"]').addEventListener("click", saveDesign);
   document.querySelector('[data-action="reload-catalog"]').addEventListener("click", () => vscode.postMessage({ type: "reloadCatalog" }));
   document.querySelector('[data-action="open-source"]').addEventListener("click", () => vscode.postMessage({ type: "openDesignSource" }));
+  const pageButton = document.querySelector('[data-action="open-page-source"]');
+  if (pageButton) {
+    pageButton.addEventListener("click", () => vscode.postMessage({ type: "openProjectFile", payload: { path: state.sourceContext.path } }));
+  }
+  document.querySelectorAll('[data-action="open-browser-preview"]').forEach((button) => {
+    button.addEventListener("click", () => openRealPreviewTab());
+  });
+  document.querySelectorAll('[data-action="refresh-preview"]').forEach((button) => {
+    button.addEventListener("click", () => vscode.postMessage({ type: "refreshStudio" }));
+  });
+  document.querySelectorAll('[data-action="run-preview-server"]').forEach((button) => {
+    button.addEventListener("click", () => vscode.postMessage({ type: "togglePreviewServer" }));
+  });
+  document.querySelectorAll('[data-action="toggle-preview-server"]').forEach((button) => {
+    button.addEventListener("click", () => vscode.postMessage({ type: "togglePreviewServer" }));
+  });
+  document.querySelectorAll('[data-action="toggle-panel"]').forEach((button) => {
+    button.addEventListener("click", () => togglePanel(button.dataset.panel));
+  });
+  bindCodeWorkspaceActions();
 }
 
 function bindPaletteDrag() {
@@ -505,6 +555,41 @@ function bindCodeTabs() {
       state.codeTab = tab.dataset.tab;
       render();
     });
+  });
+}
+
+function togglePanel(panel) {
+  if (!panel || !Object.prototype.hasOwnProperty.call(state.collapsed, panel)) {
+    return;
+  }
+  state.collapsed[panel] = !state.collapsed[panel];
+  render();
+}
+
+function openRealPreviewTab() {
+  const livePreviewUrl = state.projectContext && state.projectContext.livePreviewUrl ? state.projectContext.livePreviewUrl : "";
+  if (!livePreviewUrl) {
+    return;
+  }
+  state.previewAutoOpened = true;
+  vscode.postMessage({
+    type: "openPreviewBrowser",
+    payload: { url: livePreviewUrl },
+  });
+}
+
+function bindCodeWorkspaceActions() {
+  document.querySelectorAll("[data-file-kind][data-file-path]").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      state.activeCodeFiles[tab.dataset.fileKind] = tab.dataset.filePath;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="open-workspace-file"]').forEach((button) => {
+    button.addEventListener("click", () => vscode.postMessage({
+      type: "openProjectFile",
+      payload: { path: button.dataset.path },
+    }));
   });
 }
 
@@ -759,6 +844,8 @@ function saveDesign() {
     payload: {
       design: state.design,
       sourceCode: generateFrontendCode(state.design),
+      functionCode: generateFunctionCode(state.design),
+      martinImports: getRequiredImports(state.design),
     },
   });
 }
@@ -791,6 +878,55 @@ function getWidget(name) {
   return state.catalog.widgets.find((widget) => widget.name === name) || null;
 }
 
+function getCodeFiles(kind) {
+  if (!state.projectContext) {
+    return [];
+  }
+  if (kind === "backend") {
+    return state.projectContext.backendFiles || [];
+  }
+  return state.projectContext.frontendFiles || [];
+}
+
+function renderCodeWorkspace(kind) {
+  const workspaceFiles = getCodeFiles(kind);
+  const generatedTab = {
+    path: "__generated__",
+    relativePath: kind === "frontend" ? "Generated frontend code" : "Generated backend scaffold",
+    name: "Generated",
+    kind,
+    reason: kind === "frontend" ? "Studio generator" : "Studio scaffold",
+    content: kind === "frontend" ? generateFrontendCode(state.design) : generateBackendCode(state.design),
+  };
+  const files = [...workspaceFiles, generatedTab];
+  const activePath = state.activeCodeFiles[kind] || generatedTab.path;
+  const activeFile = files.find((file) => file.path === activePath) || generatedTab;
+
+  return `
+    <div class="workspace-code">
+      <div class="workspace-toolbar">
+        <div class="workspace-tabs">
+          ${files.map((file) => `
+            <button
+              class="file-tab ${activeFile.path === file.path ? "is-active" : ""}"
+              data-file-kind="${escapeHtml(kind)}"
+              data-file-path="${escapeHtml(file.path)}"
+            >${escapeHtml(file.name)}</button>
+          `).join("")}
+        </div>
+        ${activeFile.path !== "__generated__" ? `
+          <button class="mini-btn" data-action="open-workspace-file" data-path="${escapeHtml(activeFile.path)}">Open in Editor</button>
+        ` : ""}
+      </div>
+      <div class="workspace-meta">
+        <strong>${escapeHtml(activeFile.relativePath)}</strong>
+        ${activeFile.reason ? `<span class="hint">${escapeHtml(activeFile.reason)}</span>` : ""}
+      </div>
+      <textarea class="code-block" readonly>${escapeHtml(activeFile.content || "")}</textarea>
+    </div>
+  `;
+}
+
 function getWidgetParam(widget, paramName) {
   if (!widget) {
     return null;
@@ -809,9 +945,7 @@ function summarizeNode(node) {
 }
 
 function generateFrontendCode(design) {
-  const imports = new Set();
-  collectImports(design.root, imports);
-  const importList = Array.from(imports).sort().join(", ");
+  const importList = getRequiredImports(design).sort().join(", ");
   if (state.sourceContext && state.sourceContext.relativePath) {
     const functionName = inferFunctionName(state.sourceContext.relativePath);
     return `from martin import ${importList}
@@ -835,6 +969,15 @@ if __name__ == "__main__":
 `;
 }
 
+function generateFunctionCode(design) {
+  const functionName = state.sourceContext && state.sourceContext.relativePath
+    ? inferFunctionName(state.sourceContext.relativePath)
+    : "build";
+  return `def ${functionName}():
+${nodeToPython(design.root, 1)}
+`;
+}
+
 function generateBackendCode(design) {
   return `from martin.backend import Backend
 
@@ -853,6 +996,12 @@ def mount_backend(app):
 function collectImports(node, imports) {
   imports.add(node.type);
   for (const child of node.children || []) collectImports(child, imports);
+}
+
+function getRequiredImports(design) {
+  const imports = new Set();
+  collectImports(design.root, imports);
+  return Array.from(imports);
 }
 
 function nodeToPython(node, depth) {

@@ -65,6 +65,11 @@
           "type": "string",
           "default": "",
           "description": "Optional Python executable used by MARTIN Studio to load the widget catalog."
+        },
+        "martinStudio.previewBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:3908",
+          "description": "Base URL used by MARTIN Studio to open the live page preview inside VS Code."
         }
       }
     }

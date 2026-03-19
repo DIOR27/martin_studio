@@ -2,9 +2,12 @@ const vscode = require("vscode");
 const cp = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 
 const DESIGN_FILE = "martin-studio.design.json";
 const EXTENSION_CONFIG_KEY = "martinStudio";
+const SEARCH_EXCLUDES = "**/{.git,.venv,venv,__pycache__,node_modules,dist,build}/**";
 
 function activate(context) {
   context.subscriptions.push(
@@ -21,10 +24,7 @@ function activate(context) {
         await vscode.window.showTextDocument(doc, { preview: false });
         const workspaceFolder = getWorkspaceFolder();
         if (workspaceFolder && uri.fsPath.startsWith(workspaceFolder.uri.fsPath)) {
-          sourceContext = {
-            path: uri.fsPath,
-            relativePath: path.relative(workspaceFolder.uri.fsPath, uri.fsPath),
-          };
+          sourceContext = buildSourceContext(workspaceFolder, uri.fsPath);
         }
       }
       await openStudio(context, sourceContext);
@@ -52,46 +52,44 @@ async function openStudio(context, preferredSourceContext) {
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
     }
   );
+  panel.iconPath = {
+    light: vscode.Uri.joinPath(context.extensionUri, "media", "martin-icon.svg"),
+    dark: vscode.Uri.joinPath(context.extensionUri, "media", "martin-icon.svg"),
+  };
 
   panel.webview.html = getWebviewHtml(panel.webview, context.extensionUri);
 
   panel.webview.onDidReceiveMessage(async (message) => {
     try {
-      if (message.type === "ready") {
-        const design = await loadStudioDocument(workspaceFolder, sourceContext);
-        const catalog = await loadCatalog(workspaceFolder);
-        const previewHtml = sourceContext && sourceContext.path
-          ? await renderSourcePreviewHtml(workspaceFolder, sourceContext.path)
-          : "";
+      if (message.type === "ready" || message.type === "refreshStudio") {
+        const bootstrap = await buildStudioBootstrap(workspaceFolder, sourceContext);
         panel.webview.postMessage({
           type: "bootstrap",
-          payload: {
-            design,
-            catalog,
-            sourceContext,
-            previewHtml,
-            designPath: path.join(workspaceFolder.uri.fsPath, DESIGN_FILE),
-          },
+          payload: bootstrap,
         });
         return;
       }
 
       if (message.type === "saveDesign") {
         await saveDesignDocument(workspaceFolder, message.payload.design);
-        if (message.payload.sourceCode && sourceContext && sourceContext.path) {
-          await saveSourceFile(sourceContext.path, message.payload.sourceCode);
+        if (message.payload.functionCode && sourceContext && sourceContext.path) {
+          await updateSourceFunction(
+            workspaceFolder,
+            sourceContext.path,
+            sourceContext.functionName,
+            message.payload.functionCode,
+            message.payload.martinImports || []
+          );
           vscode.window.setStatusBarMessage(`MARTIN Studio saved to ${sourceContext.relativePath}`, 3000);
         } else {
           vscode.window.setStatusBarMessage("MARTIN Studio design saved", 2000);
         }
-        const refreshedPreviewHtml = sourceContext && sourceContext.path
-          ? await renderSourcePreviewHtml(workspaceFolder, sourceContext.path)
-          : "";
+        const refreshed = await buildStudioBootstrap(workspaceFolder, sourceContext);
         panel.webview.postMessage({
           type: "saveComplete",
           payload: {
             target: sourceContext && sourceContext.relativePath ? sourceContext.relativePath : DESIGN_FILE,
-            previewHtml: refreshedPreviewHtml,
+            ...refreshed,
           },
         });
         return;
@@ -108,9 +106,27 @@ async function openStudio(context, preferredSourceContext) {
       }
 
       if (message.type === "openDesignSource") {
-        const uri = vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, DESIGN_FILE));
-        const doc = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(doc, { preview: false });
+        await openFileInEditor(path.join(workspaceFolder.uri.fsPath, DESIGN_FILE));
+        return;
+      }
+
+      if (message.type === "openProjectFile" && message.payload && message.payload.path) {
+        await openFileInEditor(message.payload.path);
+        return;
+      }
+
+      if (message.type === "openPreviewBrowser" && message.payload && message.payload.url) {
+        await vscode.commands.executeCommand("simpleBrowser.show", message.payload.url);
+        return;
+      }
+
+      if (message.type === "togglePreviewServer") {
+        const stopped = await togglePreviewServer(workspaceFolder);
+        vscode.window.setStatusBarMessage(
+          stopped ? "MARTIN Studio stopped preview server" : "MARTIN Studio started `martin run` in the integrated terminal",
+          3000
+        );
+        return;
       }
     } catch (error) {
       const text = error && error.message ? error.message : String(error);
@@ -119,9 +135,35 @@ async function openStudio(context, preferredSourceContext) {
   });
 }
 
+async function buildStudioBootstrap(workspaceFolder, sourceContext) {
+  const design = await loadStudioDocument(workspaceFolder, sourceContext);
+  const catalog = await loadCatalog(workspaceFolder);
+  const previewHtml = sourceContext && sourceContext.path
+    ? await renderSourcePreviewHtml(workspaceFolder, sourceContext.path)
+    : "";
+  const projectContext = await discoverProjectContext(workspaceFolder, sourceContext);
+  return {
+    design,
+    catalog,
+    sourceContext,
+    previewHtml,
+    projectContext,
+    designPath: path.join(workspaceFolder.uri.fsPath, DESIGN_FILE),
+  };
+}
+
 function getWorkspaceFolder() {
   const folder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
   return folder || null;
+}
+
+function buildSourceContext(workspaceFolder, filePath) {
+  return {
+    path: filePath,
+    relativePath: path.relative(workspaceFolder.uri.fsPath, filePath),
+    modulePath: toPythonModulePath(workspaceFolder, filePath),
+    functionName: inferFunctionName(path.relative(workspaceFolder.uri.fsPath, filePath)),
+  };
 }
 
 function defaultDesign() {
@@ -197,10 +239,7 @@ function getActiveSourceContext(workspaceFolder) {
   if (!filePath.startsWith(workspaceFolder.uri.fsPath)) {
     return null;
   }
-  return {
-    path: filePath,
-    relativePath: path.relative(workspaceFolder.uri.fsPath, filePath),
-  };
+  return buildSourceContext(workspaceFolder, filePath);
 }
 
 async function saveDesignDocument(workspaceFolder, design) {
@@ -219,6 +258,40 @@ async function saveSourceFile(filePath, sourceCode) {
   edit.replace(uri, fullRange, sourceCode);
   await vscode.workspace.applyEdit(edit);
   await doc.save();
+}
+
+async function updateSourceFunction(workspaceFolder, sourcePath, functionName, functionCode, martinImports = []) {
+  const frameworkPath = resolveFrameworkPath(workspaceFolder);
+  const configuredPython = getConfig("pythonPath");
+  const encodedCode = Buffer.from(String(functionCode), "utf8").toString("base64");
+  const encodedImports = Buffer.from(JSON.stringify(martinImports || []), "utf8").toString("base64");
+  const command = [
+    "import base64, json, sys",
+    "sys.stdout.reconfigure(encoding='utf-8')",
+    "from martin.studio import update_source_function",
+    `update_source_function(r'''${escapePython(sourcePath)}''', ${JSON.stringify(String(functionName))}, base64.b64decode(${JSON.stringify(encodedCode)}).decode('utf-8'), json.loads(base64.b64decode(${JSON.stringify(encodedImports)}).decode('utf-8')))`,
+    "print('ok')",
+  ].join("; ");
+  const attempts = buildPythonAttempts(configuredPython, command);
+  const env = buildCatalogEnv(frameworkPath);
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      await execFile(attempt.bin, attempt.args, {
+        cwd: workspaceFolder.uri.fsPath,
+        env,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(lastError ? lastError.message : "Unable to update source function.");
+}
+
+async function openFileInEditor(filePath) {
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+  await vscode.window.showTextDocument(doc, { preview: false });
 }
 
 async function parseSourceFileToDesign(workspaceFolder, sourcePath) {
@@ -299,8 +372,224 @@ async function renderSourcePreviewHtml(workspaceFolder, sourcePath) {
   return "";
 }
 
+async function discoverProjectContext(workspaceFolder, sourceContext) {
+  const baseUrl = normalizePreviewBaseUrl(String(getConfig("previewBaseUrl") || ""));
+  const livePreviewOnline = baseUrl ? await isPreviewUrlReachable(baseUrl) : false;
+  const empty = {
+    routePath: "/",
+    livePreviewUrl: baseUrl || "",
+    livePreviewOnline,
+    frontendFiles: [],
+    backendFiles: [],
+  };
+  if (!sourceContext || !sourceContext.path) {
+    return empty;
+  }
+
+  const frontendFiles = [
+    buildFileTab(workspaceFolder, sourceContext.path, "page", "Active page"),
+  ];
+  const related = [];
+  const files = await vscode.workspace.findFiles("**/*.py", SEARCH_EXCLUDES, 300);
+  for (const uri of files) {
+    if (uri.fsPath === sourceContext.path) {
+      continue;
+    }
+    const relation = scoreRelatedFile(workspaceFolder, sourceContext, uri.fsPath);
+    if (relation.score > 0) {
+      related.push(relation);
+    }
+  }
+
+  related.sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath));
+
+  const backendFiles = [];
+  for (const relation of related.slice(0, 8)) {
+    const tab = buildFileTab(workspaceFolder, relation.path, relation.kind, relation.reason);
+    if (relation.kind === "backend") {
+      backendFiles.push(tab);
+    } else {
+      frontendFiles.push(tab);
+    }
+  }
+
+  const routePath = detectRoutePath(sourceContext, related) || "/";
+  const livePreviewUrl = baseUrl ? joinPreviewUrl(baseUrl, routePath) : "";
+  return {
+    routePath,
+    livePreviewUrl,
+    livePreviewOnline,
+    frontendFiles,
+    backendFiles,
+  };
+}
+
+function scoreRelatedFile(workspaceFolder, sourceContext, filePath) {
+  const text = safeReadFile(filePath);
+  const relativePath = path.relative(workspaceFolder.uri.fsPath, filePath);
+  const modulePath = sourceContext.modulePath;
+  const functionName = sourceContext.functionName;
+  let score = 0;
+  const reasons = [];
+
+  if (new RegExp(`from\\s+${escapeRegExp(modulePath)}\\s+import\\s+[^\\n]*\\b${escapeRegExp(functionName)}\\b`).test(text)) {
+    score += 8;
+    reasons.push(`imports ${functionName}`);
+  }
+  if (new RegExp(`import\\s+${escapeRegExp(modulePath)}\\b`).test(text)) {
+    score += 5;
+    reasons.push(`imports ${modulePath}`);
+  }
+  if (new RegExp(`\\b${escapeRegExp(functionName)}\\b`).test(text)) {
+    score += 2;
+  }
+  if (new RegExp(`router\\.add\\(\\s*['"][^'"]+['"]\\s*,\\s*${escapeRegExp(functionName)}\\b`, "s").test(text)) {
+    score += 6;
+    reasons.push("registers route");
+  }
+  if (new RegExp(`register_${escapeRegExp(functionName)}_backend\\b`).test(text)) {
+    score += 8;
+    reasons.push("registers page backend");
+  }
+
+  const hasBackendMarkers = /from\s+martin\.backend\s+import\s+Backend|\bBackend\s*\(|backend\.mount\(|register_[A-Za-z0-9_]+_backend\b/.test(text);
+  if (hasBackendMarkers) {
+    score += 2;
+  }
+
+  const kind = hasBackendMarkers ? "backend" : "frontend";
+  return {
+    path: filePath,
+    relativePath,
+    score,
+    kind,
+    reason: reasons[0] || (hasBackendMarkers ? "Backend integration" : "Project relation"),
+    content: text,
+  };
+}
+
+function buildFileTab(workspaceFolder, filePath, kind, reason) {
+  return {
+    path: filePath,
+    relativePath: path.relative(workspaceFolder.uri.fsPath, filePath),
+    name: path.basename(filePath),
+    kind,
+    reason,
+    content: safeReadFile(filePath),
+  };
+}
+
+function detectRoutePath(sourceContext, relations) {
+  const functionName = sourceContext.functionName;
+  const routeRegex = new RegExp(`router\\.add\\(\\s*['"]([^'"]+)['"]\\s*,\\s*${escapeRegExp(functionName)}\\b`, "s");
+  for (const relation of relations) {
+    const match = routeRegex.exec(relation.content || "");
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  if (sourceContext.relativePath.startsWith(`pages${path.sep}`) || sourceContext.relativePath.startsWith("pages/")) {
+    return sourceContext.functionName === "home" ? "/" : `/${sourceContext.functionName}`;
+  }
+  return "/";
+}
+
+function safeReadFile(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function toPythonModulePath(workspaceFolder, filePath) {
+  const relativePath = path.relative(workspaceFolder.uri.fsPath, filePath);
+  return relativePath.replace(/\\/g, "/").replace(/\.py$/i, "").split("/").filter(Boolean).join(".");
+}
+
+function inferFunctionName(relativePath) {
+  const fileName = String(relativePath || "build.py").split(/[\\/]/).pop() || "build.py";
+  const stem = fileName.replace(/\.py$/i, "");
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(stem) ? stem : "build";
+}
+
+function normalizePreviewBaseUrl(url) {
+  const trimmed = String(url || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.replace(/\/+$/, "");
+}
+
+function joinPreviewUrl(baseUrl, routePath) {
+  const normalizedRoute = routePath.startsWith("/") ? routePath : `/${routePath}`;
+  return `${baseUrl}${normalizedRoute}`;
+}
+
+async function runPreviewServer(workspaceFolder) {
+  const terminalName = "MARTIN Preview";
+  let terminal = vscode.window.terminals.find((item) => item.name === terminalName) || null;
+  if (!terminal) {
+    terminal = vscode.window.createTerminal({
+      name: terminalName,
+      cwd: workspaceFolder.uri.fsPath,
+    });
+  }
+  terminal.show(true);
+  terminal.sendText("martin run", true);
+}
+
+async function togglePreviewServer(workspaceFolder) {
+  const terminalName = "MARTIN Preview";
+  const terminal = vscode.window.terminals.find((item) => item.name === terminalName) || null;
+  const previewBaseUrl = normalizePreviewBaseUrl(String(getConfig("previewBaseUrl") || ""));
+  const running = previewBaseUrl ? await isPreviewUrlReachable(previewBaseUrl) : false;
+  if (running && terminal) {
+    terminal.show(true);
+    terminal.sendText("\u0003", false);
+    return true;
+  }
+  await runPreviewServer(workspaceFolder);
+  return false;
+}
+
+function isPreviewUrlReachable(urlText) {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(urlText);
+      const client = parsed.protocol === "https:" ? https : http;
+      const request = client.request(
+        {
+          protocol: parsed.protocol,
+          hostname: parsed.hostname,
+          port: parsed.port,
+          path: parsed.pathname || "/",
+          method: "GET",
+          timeout: 1500,
+        },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode && response.statusCode < 500);
+        }
+      );
+      request.on("error", () => resolve(false));
+      request.on("timeout", () => {
+        request.destroy();
+        resolve(false);
+      });
+      request.end();
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 function escapePython(text) {
   return String(text).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function getConfig(key) {
@@ -375,7 +664,7 @@ function getWebviewHtml(webview, extensionUri) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: https: http:; frame-src ${webview.cspSource} https: http:;" />
   <link rel="stylesheet" href="${styleUri}">
   <title>MARTIN Studio</title>
 </head>
