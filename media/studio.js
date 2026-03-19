@@ -36,6 +36,7 @@ const state = {
   dragScroll: {
     rafId: 0,
     pointerY: null,
+    wheelBound: false,
   },
 };
 
@@ -106,6 +107,7 @@ function clone(value) {
 
 function init() {
   window.addEventListener("message", onMessage);
+  bindDragWheelScroll();
   vscode.postMessage({ type: "ready" });
 }
 
@@ -681,6 +683,36 @@ function stopDragAutoScroll() {
     state.dragScroll.rafId = 0;
   }
   state.dragScroll.pointerY = null;
+}
+
+function bindDragWheelScroll() {
+  if (state.dragScroll.wheelBound) {
+    return;
+  }
+  state.dragScroll.wheelBound = true;
+  const handleWheel = (event) => {
+    if (!state.dragActive) {
+      return;
+    }
+    const canvas = document.querySelector(".canvas-wrap");
+    if (!canvas) {
+      return;
+    }
+    const deltaY = typeof event.deltaY === "number"
+      ? event.deltaY
+      : (typeof event.wheelDelta === "number" ? -event.wheelDelta : 0);
+    const deltaX = typeof event.deltaX === "number" ? event.deltaX : 0;
+    if (deltaY) {
+      canvas.scrollTop += deltaY;
+    }
+    if (deltaX) canvas.scrollLeft += deltaX;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+  document.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+  window.addEventListener("mousewheel", handleWheel, { passive: false, capture: true });
+  document.addEventListener("mousewheel", handleWheel, { passive: false, capture: true });
 }
 
 function bindPaletteSearch() {
