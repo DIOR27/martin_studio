@@ -764,6 +764,7 @@ function execFile(bin, args, options) {
 function getWebviewHtml(webview, extensionUri) {
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "studio.js"));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "studio.css"));
+  const iconUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "martin-icon.svg"));
   const nonce = String(Date.now());
   return `<!DOCTYPE html>
 <html lang="en">
@@ -778,7 +779,10 @@ function getWebviewHtml(webview, extensionUri) {
   <div id="app"></div>
   <script nonce="${nonce}">
     window.__MARTIN_STUDIO__ = {
-      vscode: acquireVsCodeApi()
+      vscode: acquireVsCodeApi(),
+      assets: {
+        iconUri: ${JSON.stringify(String(iconUri))}
+      }
     };
   </script>
   <script nonce="${nonce}" src="${scriptUri}"></script>

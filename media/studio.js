@@ -1,4 +1,5 @@
 const vscode = window.__MARTIN_STUDIO__.vscode;
+const assets = (window.__MARTIN_STUDIO__ && window.__MARTIN_STUDIO__.assets) || {};
 
 const state = {
   catalog: null,
@@ -152,7 +153,7 @@ function render() {
     <div class="studio-shell ${state.collapsed.palette ? "is-palette-collapsed" : ""} ${state.collapsed.inspector ? "is-inspector-collapsed" : ""} ${state.collapsed.bottom ? "is-bottom-collapsed" : ""}">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark"></span>
+          <img class="brand-mark" src="${escapeHtml(assets.iconUri || "")}" alt="MARTIN">
           <h1>MARTIN Studio</h1>
           <span class="pill">${state.catalog.widget_count} widgets</span>
           ${state.sourceContext ? `<span class="hint">Source: ${escapeHtml(state.sourceContext.relativePath)}</span>` : `<span class="hint">Source: design JSON</span>`}
@@ -266,10 +267,13 @@ function renderNode(node, isRoot = false) {
   const selected = state.selectedId === node.id ? "is-selected" : "";
   const canReceiveChildren = widget && widget.accepts_children;
   const children = Array.isArray(node.children) ? node.children : [];
+  const childrenClass = node.type === "Row" ? "node-children is-row" : "node-children";
   const childrenMarkup = canReceiveChildren
     ? children.map((child, index) => `
-        <div class="dropzone dropzone-inline" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${index}">Drop widget here</div>
-        ${renderNode(child)}
+        <div class="node-child-slot">
+          <div class="dropzone dropzone-inline" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${index}">Drop widget here</div>
+          ${renderNode(child)}
+        </div>
       `).join("")
     : "";
 
@@ -286,8 +290,12 @@ function renderNode(node, isRoot = false) {
         </div>
       </div>
       ${canReceiveChildren ? `
-        ${childrenMarkup}
-        <div class="dropzone" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${children.length}">Drop widget here</div>
+        <div class="${childrenClass}">
+          ${childrenMarkup}
+          <div class="node-child-slot node-child-slot-tail">
+            <div class="dropzone" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${children.length}">Drop widget here</div>
+          </div>
+        </div>
       ` : `<div class="hint">Leaf widget</div>`}
     </article>
   `;

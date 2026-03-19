@@ -81,11 +81,11 @@ body {
 }
 
 .brand-mark {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #f97316, #2f81f7);
-  box-shadow: 0 0 18px rgba(47, 129, 247, 0.45);
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .brand h1 {
@@ -440,6 +440,26 @@ body {
   gap: 6px;
 }
 
+.node-children {
+  display: grid;
+  gap: 12px;
+}
+
+.node-children.is-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.node-child-slot {
+  min-width: 0;
+}
+
+.node-children.is-row .node-child-slot {
+  flex: 1 1 260px;
+}
+
 .icon-btn {
   border: 1px solid var(--border);
   background: transparent;
@@ -475,6 +495,11 @@ body {
   padding: 8px 12px;
   margin-bottom: 10px;
   font-size: 12px;
+}
+
+.node-children.is-row .dropzone-inline,
+.node-children.is-row .dropzone {
+  min-height: 44px;
 }
 
 .dropzone.is-over {
