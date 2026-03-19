@@ -33,6 +33,10 @@ const state = {
     paletteSearchEnd: 0,
   },
   dragActive: false,
+  dragScroll: {
+    rafId: 0,
+    pointerY: null,
+  },
 };
 
 const WIDGET_ICONS = {
@@ -629,6 +633,54 @@ function setDragActive(active) {
   if (shell) {
     shell.classList.toggle("is-drag-active", state.dragActive);
   }
+  if (state.dragActive) {
+    ensureDragAutoScroll();
+  } else {
+    stopDragAutoScroll();
+  }
+}
+
+function updateDragPointer(event) {
+  state.dragScroll.pointerY = typeof event?.clientY === "number" ? event.clientY : null;
+}
+
+function ensureDragAutoScroll() {
+  if (state.dragScroll.rafId) {
+    return;
+  }
+  const tick = () => {
+    state.dragScroll.rafId = 0;
+    if (!state.dragActive) {
+      return;
+    }
+    const canvas = document.querySelector(".canvas-wrap");
+    const pointerY = state.dragScroll.pointerY;
+    if (canvas && typeof pointerY === "number") {
+      const rect = canvas.getBoundingClientRect();
+      const threshold = Math.min(96, Math.max(48, rect.height * 0.14));
+      let delta = 0;
+      if (pointerY < rect.top + threshold) {
+        const intensity = 1 - Math.max(0, (pointerY - rect.top) / threshold);
+        delta = -Math.ceil(8 + intensity * 24);
+      } else if (pointerY > rect.bottom - threshold) {
+        const intensity = 1 - Math.max(0, (rect.bottom - pointerY) / threshold);
+        delta = Math.ceil(8 + intensity * 24);
+      }
+      if (delta !== 0) {
+        canvas.scrollTop += delta;
+      }
+    }
+    ensureDragAutoScroll();
+  };
+  state.dragScroll.rafId = requestAnimationFrame(tick);
+}
+
+function stopDragAutoScroll() {
+  if (state.dragScroll.rafId) {
+    cancelAnimationFrame(state.dragScroll.rafId);
+    state.dragScroll.rafId = 0;
+  }
+  state.dragScroll.pointerY = null;
 }
 
 function bindPaletteSearch() {
@@ -646,6 +698,7 @@ function bindPaletteDrag() {
   document.querySelectorAll(".palette-item").forEach((element) => {
     element.addEventListener("dragstart", (event) => {
       setDragActive(true);
+      updateDragPointer(event);
       event.dataTransfer.setData("application/martin-widget", element.dataset.widget);
     });
     element.addEventListener("dragend", () => {
@@ -662,6 +715,7 @@ function bindDropzones() {
         return;
       }
       event.preventDefault();
+      updateDragPointer(event);
       zone.classList.add("is-over");
     });
     zone.addEventListener("dragleave", () => zone.classList.remove("is-over"));
@@ -689,6 +743,7 @@ function bindNodeActions() {
     if (card.getAttribute("draggable") === "true") {
       card.addEventListener("dragstart", (event) => {
         setDragActive(true);
+        updateDragPointer(event);
         event.stopPropagation();
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
@@ -709,6 +764,11 @@ function bindNodeActions() {
       render();
     });
   });
+
+  const canvas = document.querySelector(".canvas-wrap");
+  if (canvas) {
+    canvas.addEventListener("dragover", updateDragPointer);
+  }
 
   document.querySelectorAll('[data-action="delete-node"]').forEach((button) => {
     button.addEventListener("click", (event) => {
