@@ -24,6 +24,7 @@
       {
         "command": "martinStudio.openCurrentFile",
         "title": "Open in MARTIN Studio",
+        "shortTitle": "Open in MARTIN Studio",
         "icon": {
           "light": "media/martin-icon.svg",
           "dark": "media/martin-icon.svg"

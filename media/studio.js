@@ -18,6 +18,42 @@ const state = {
     inspector: false,
     bottom: false,
   },
+  collapsedGroups: {},
+  scrollPositions: {
+    sidebar: 0,
+    inspector: 0,
+    canvas: 0,
+    code: 0,
+  },
+};
+
+const WIDGET_ICONS = {
+  Alert: "!",
+  Badge: "●",
+  Button: "□",
+  Calendar: "31",
+  Card: "◫",
+  Carousel: "↻",
+  Chart: "▤",
+  Code: "</>",
+  Column: "↕",
+  Divider: "—",
+  Drawer: "⇥",
+  Form: "ƒ",
+  Grid: "▦",
+  Heading: "H",
+  Image: "◩",
+  Link: "⤴",
+  Map: "⌖",
+  Paragraph: "¶",
+  Row: "↔",
+  Select: "▾",
+  SideMenu: "☰",
+  Table: "▥",
+  Text: "T",
+  Timeline: "⋯",
+  Video: "▶",
+  WordCloud: "☁",
 };
 
 const POSITIONAL_PROP_MAP = {
@@ -72,6 +108,12 @@ function onMessage(event) {
     state.catalog = message.payload.catalog || state.catalog;
     initializeCodeFileSelection();
     render();
+    return;
+  }
+  if (message.type === "projectContextUpdated") {
+    state.projectContext = message.payload || null;
+    initializeCodeFileSelection();
+    render();
   }
 }
 
@@ -87,6 +129,7 @@ function initializeCodeFileSelection() {
 }
 
 function render() {
+  captureScrollPositions();
   if (!state.catalog || !state.design) {
     document.getElementById("app").innerHTML = `<div class="empty-state">Loading MARTIN Studio...</div>`;
     return;
@@ -140,6 +183,8 @@ function render() {
   bindNodeActions();
   bindInspector();
   bindCodeTabs();
+  bindGroupActions();
+  restoreScrollPositions();
 }
 
 function renderPalette() {
@@ -157,12 +202,18 @@ function renderPalette() {
       <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="palette" title="${state.collapsed.palette ? "Expand palette" : "Collapse palette"}">${state.collapsed.palette ? "▸" : "◂"}</button>
     </div>
     ${Array.from(groups.entries()).map(([category, widgets]) => `
-      <section class="catalog-group">
-        <h3>${escapeHtml(category)}</h3>
-        ${widgets.map((widget) => `
+      <section class="catalog-group ${state.collapsedGroups[category] ? "is-collapsed" : ""}">
+        <button class="catalog-group-toggle" data-action="toggle-group" data-group="${escapeHtml(category)}" title="${state.collapsedGroups[category] ? "Expand group" : "Collapse group"}">
+          <span>${escapeHtml(category)}</span>
+          <span class="catalog-group-caret">${state.collapsedGroups[category] ? "▸" : "▾"}</span>
+        </button>
+        ${state.collapsedGroups[category] ? "" : widgets.map((widget) => `
           <button class="palette-item" draggable="true" data-widget="${escapeHtml(widget.name)}" title="${escapeHtml(widget.summary || widget.name)}">
-            ${escapeHtml(widget.name)}
-            <small>${escapeHtml(widget.summary || widget.category)}</small>
+            <span class="widget-icon">${escapeHtml(getWidgetIcon(widget.name))}</span>
+            <span class="palette-copy">
+              <span class="palette-name">${escapeHtml(widget.name)}</span>
+              <small>${escapeHtml(widget.summary || widget.category)}</small>
+            </span>
           </button>
         `).join("")}
       </section>
@@ -216,7 +267,7 @@ function renderInspector() {
   return `
     <div class="panel-head">
       <p class="section-title">Inspector</p>
-      <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="inspector" title="${state.collapsed.inspector ? "Expand inspector" : "Collapse inspector"}">${state.collapsed.inspector ? "▸" : "▸"}</button>
+      <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="inspector" title="${state.collapsed.inspector ? "Expand inspector" : "Collapse inspector"}">${state.collapsed.inspector ? "◂" : "▸"}</button>
     </div>
     <h2 style="margin:0 0 8px">${escapeHtml(node.type)}</h2>
     <p class="hint" style="margin:0 0 16px">${escapeHtml(widget.summary || "")}</p>
@@ -454,6 +505,12 @@ function bindGlobalActions() {
   bindCodeWorkspaceActions();
 }
 
+function bindGroupActions() {
+  document.querySelectorAll('[data-action="toggle-group"]').forEach((button) => {
+    button.addEventListener("click", () => toggleGroup(button.dataset.group));
+  });
+}
+
 function bindPaletteDrag() {
   document.querySelectorAll(".palette-item").forEach((element) => {
     element.addEventListener("dragstart", (event) => {
@@ -563,6 +620,14 @@ function togglePanel(panel) {
     return;
   }
   state.collapsed[panel] = !state.collapsed[panel];
+  render();
+}
+
+function toggleGroup(group) {
+  if (!group) {
+    return;
+  }
+  state.collapsedGroups[group] = !state.collapsedGroups[group];
   render();
 }
 
@@ -703,6 +768,26 @@ function updateProp(nodeId, propName, value) {
   if (value === "" || value === null || value === undefined) delete node.props[propName];
   else node.props[propName] = value;
   render();
+}
+
+function captureScrollPositions() {
+  state.scrollPositions.sidebar = document.querySelector(".sidebar")?.scrollTop || 0;
+  state.scrollPositions.inspector = document.querySelector(".inspector")?.scrollTop || 0;
+  state.scrollPositions.canvas = document.querySelector(".canvas-wrap")?.scrollTop || 0;
+  state.scrollPositions.code = document.querySelector(".code-body")?.scrollTop || 0;
+}
+
+function restoreScrollPositions() {
+  requestAnimationFrame(() => {
+    const sidebar = document.querySelector(".sidebar");
+    const inspector = document.querySelector(".inspector");
+    const canvas = document.querySelector(".canvas-wrap");
+    const code = document.querySelector(".code-body");
+    if (sidebar) sidebar.scrollTop = state.scrollPositions.sidebar || 0;
+    if (inspector) inspector.scrollTop = state.scrollPositions.inspector || 0;
+    if (canvas) canvas.scrollTop = state.scrollPositions.canvas || 0;
+    if (code) code.scrollTop = state.scrollPositions.code || 0;
+  });
 }
 
 function addCollectionItem(nodeId, propName) {
@@ -934,6 +1019,10 @@ function getWidgetParam(widget, paramName) {
   return widget.params.find((param) => param.name === paramName) || null;
 }
 
+function getWidgetIcon(name) {
+  return WIDGET_ICONS[name] || "◇";
+}
+
 function summarizeNode(node) {
   const props = node.props || {};
   if (props.content) return String(props.content).slice(0, 72);
@@ -1001,6 +1090,9 @@ function collectImports(node, imports) {
 function getRequiredImports(design) {
   const imports = new Set();
   collectImports(design.root, imports);
+  if (imports.has("Calendar")) {
+    imports.add("CalendarEvent");
+  }
   return Array.from(imports);
 }
 
@@ -1011,10 +1103,10 @@ function nodeToPython(node, depth) {
   const positionalProp = POSITIONAL_PROP_MAP[node.type];
   const nodeProps = { ...(node.props || {}) };
   if (positionalProp && nodeProps[positionalProp] !== undefined) {
-    props.push(pyValue(nodeProps[positionalProp], depth + 1));
+    props.push(pyPropValue(node.type, positionalProp, nodeProps[positionalProp], depth + 1));
     delete nodeProps[positionalProp];
   }
-  for (const [key, value] of Object.entries(nodeProps)) props.push(`${key}=${pyValue(value, depth + 1)}`);
+  for (const [key, value] of Object.entries(nodeProps)) props.push(`${key}=${pyPropValue(node.type, key, value, depth + 1)}`);
   if (node.children && node.children.length) {
     const childrenCode = node.children.map((child) => nodeToExpression(child, depth + 2)).join(",\n");
     props.push(`children=[\n${childrenCode}\n${indent}    ]`);
@@ -1031,10 +1123,10 @@ function nodeToExpression(node, depth) {
   const positionalProp = POSITIONAL_PROP_MAP[node.type];
   const nodeProps = { ...(node.props || {}) };
   if (positionalProp && nodeProps[positionalProp] !== undefined) {
-    props.push(pyValue(nodeProps[positionalProp], depth + 1));
+    props.push(pyPropValue(node.type, positionalProp, nodeProps[positionalProp], depth + 1));
     delete nodeProps[positionalProp];
   }
-  for (const [key, value] of Object.entries(nodeProps)) props.push(`${key}=${pyValue(value, depth + 1)}`);
+  for (const [key, value] of Object.entries(nodeProps)) props.push(`${key}=${pyPropValue(node.type, key, value, depth + 1)}`);
   if (node.children && node.children.length) {
     const childrenCode = node.children.map((child) => nodeToExpression(child, depth + 2)).join(",\n");
     props.push(`children=[\n${childrenCode}\n${indent}    ]`);
@@ -1059,6 +1151,39 @@ function pyValue(value, depth) {
     return `{\n${entries.map(([key, entryValue]) => `${indent}${pyString(key)}: ${pyValue(entryValue, depth + 1)}`).join(",\n")}\n${"    ".repeat(depth - 1)}}`;
   }
   return pyString(String(value));
+}
+
+function pyPropValue(widgetType, propName, value, depth) {
+  if (widgetType === "Calendar" && propName === "events" && Array.isArray(value)) {
+    return pyCalendarEvents(value, depth);
+  }
+  return pyValue(value, depth);
+}
+
+function pyCalendarEvents(events, depth) {
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  if (!events.length) {
+    return "[]";
+  }
+  return `[\n${events.map((event) => `${indent}${pyCalendarEvent(event, depth + 1)}`).join(",\n")}\n${closingIndent}]`;
+}
+
+function pyCalendarEvent(event, depth) {
+  if (!event || typeof event !== "object" || Array.isArray(event)) {
+    return pyValue(event, depth);
+  }
+  const fields = [];
+  const orderedKeys = ["title", "date", "start_time", "end_time", "color", "description", "all_day", "url"];
+  for (const key of orderedKeys) {
+    if (event[key] !== undefined && event[key] !== null && event[key] !== "") {
+      fields.push(`${key}=${pyValue(event[key], depth + 1)}`);
+    }
+  }
+  if (!fields.length) {
+    return "CalendarEvent()";
+  }
+  return `CalendarEvent(${fields.join(", ")})`;
 }
 
 function pyString(text) {

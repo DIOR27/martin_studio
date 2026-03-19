@@ -2,6 +2,7 @@ const vscode = require("vscode");
 const cp = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const http = require("http");
 const https = require("https");
 
@@ -41,10 +42,13 @@ async function openStudio(context, preferredSourceContext) {
     return;
   }
   const sourceContext = preferredSourceContext || getActiveSourceContext(workspaceFolder);
+  const panelTitle = sourceContext && sourceContext.path
+    ? `MARTIN Studio - ${path.basename(sourceContext.path)}`
+    : "MARTIN Studio";
 
   const panel = vscode.window.createWebviewPanel(
     "martinStudio",
-    "MARTIN Studio",
+    panelTitle,
     vscode.ViewColumn.One,
     {
       enableScripts: true,
@@ -63,6 +67,9 @@ async function openStudio(context, preferredSourceContext) {
     try {
       if (message.type === "ready" || message.type === "refreshStudio") {
         const bootstrap = await buildStudioBootstrap(workspaceFolder, sourceContext);
+        panel.title = sourceContext && sourceContext.path
+          ? `MARTIN Studio - ${path.basename(sourceContext.path)}`
+          : "MARTIN Studio";
         panel.webview.postMessage({
           type: "bootstrap",
           payload: bootstrap,
@@ -85,6 +92,9 @@ async function openStudio(context, preferredSourceContext) {
           vscode.window.setStatusBarMessage("MARTIN Studio design saved", 2000);
         }
         const refreshed = await buildStudioBootstrap(workspaceFolder, sourceContext);
+        panel.title = sourceContext && sourceContext.path
+          ? `MARTIN Studio - ${path.basename(sourceContext.path)}`
+          : "MARTIN Studio";
         panel.webview.postMessage({
           type: "saveComplete",
           payload: {
@@ -122,6 +132,12 @@ async function openStudio(context, preferredSourceContext) {
 
       if (message.type === "togglePreviewServer") {
         const stopped = await togglePreviewServer(workspaceFolder);
+        const projectContext = await discoverProjectContext(workspaceFolder, sourceContext);
+        projectContext.livePreviewOnline = stopped ? false : Boolean(projectContext.livePreviewOnline || projectContext.livePreviewUrl);
+        panel.webview.postMessage({
+          type: "projectContextUpdated",
+          payload: projectContext,
+        });
         vscode.window.setStatusBarMessage(
           stopped ? "MARTIN Studio stopped preview server" : "MARTIN Studio started `martin run` in the integrated terminal",
           3000
@@ -263,28 +279,50 @@ async function saveSourceFile(filePath, sourceCode) {
 async function updateSourceFunction(workspaceFolder, sourcePath, functionName, functionCode, martinImports = []) {
   const frameworkPath = resolveFrameworkPath(workspaceFolder);
   const configuredPython = getConfig("pythonPath");
-  const encodedCode = Buffer.from(String(functionCode), "utf8").toString("base64");
-  const encodedImports = Buffer.from(JSON.stringify(martinImports || []), "utf8").toString("base64");
-  const command = [
-    "import base64, json, sys",
-    "sys.stdout.reconfigure(encoding='utf-8')",
-    "from martin.studio import update_source_function",
-    `update_source_function(r'''${escapePython(sourcePath)}''', ${JSON.stringify(String(functionName))}, base64.b64decode(${JSON.stringify(encodedCode)}).decode('utf-8'), json.loads(base64.b64decode(${JSON.stringify(encodedImports)}).decode('utf-8')))`,
-    "print('ok')",
-  ].join("; ");
-  const attempts = buildPythonAttempts(configuredPython, command);
   const env = buildCatalogEnv(frameworkPath);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "martin-studio-"));
+  const scriptPath = path.join(tempDir, "update_source.py");
+  const functionPath = path.join(tempDir, "function.py");
+  const importsPath = path.join(tempDir, "imports.json");
+  fs.writeFileSync(functionPath, String(functionCode), "utf8");
+  fs.writeFileSync(importsPath, JSON.stringify(martinImports || []), "utf8");
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "import json",
+      "import pathlib",
+      "import sys",
+      "from martin.studio import update_source_function",
+      "source_path = sys.argv[1]",
+      "function_name = sys.argv[2]",
+      "function_code = pathlib.Path(sys.argv[3]).read_text(encoding='utf-8')",
+      "martin_imports = json.loads(pathlib.Path(sys.argv[4]).read_text(encoding='utf-8'))",
+      "update_source_function(source_path, function_name, function_code, martin_imports)",
+      "print('ok')",
+    ].join("\n"),
+    "utf8"
+  );
+  const attempts = buildPythonScriptAttempts(configuredPython, scriptPath, [
+    sourcePath,
+    String(functionName),
+    functionPath,
+    importsPath,
+  ]);
   let lastError = null;
-  for (const attempt of attempts) {
-    try {
-      await execFile(attempt.bin, attempt.args, {
-        cwd: workspaceFolder.uri.fsPath,
-        env,
-      });
-      return;
-    } catch (error) {
-      lastError = error;
+  try {
+    for (const attempt of attempts) {
+      try {
+        await execFile(attempt.bin, attempt.args, {
+          cwd: workspaceFolder.uri.fsPath,
+          env,
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
     }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
   throw new Error(lastError ? lastError.message : "Unable to update source function.");
 }
@@ -607,6 +645,21 @@ function buildPythonAttempts(configuredPython, command) {
   } else {
     attempts.push({ bin: "python3", args: ["-X", "utf8", "-c", command] });
     attempts.push({ bin: "python", args: ["-X", "utf8", "-c", command] });
+  }
+  return attempts;
+}
+
+function buildPythonScriptAttempts(configuredPython, scriptPath, scriptArgs) {
+  const attempts = [];
+  if (configuredPython) {
+    attempts.push({ bin: configuredPython, args: ["-X", "utf8", scriptPath, ...scriptArgs] });
+  }
+  if (process.platform === "win32") {
+    attempts.push({ bin: "python", args: ["-X", "utf8", scriptPath, ...scriptArgs] });
+    attempts.push({ bin: "py", args: ["-3", "-X", "utf8", scriptPath, ...scriptArgs] });
+  } else {
+    attempts.push({ bin: "python3", args: ["-X", "utf8", scriptPath, ...scriptArgs] });
+    attempts.push({ bin: "python", args: ["-X", "utf8", scriptPath, ...scriptArgs] });
   }
   return attempts;
 }
