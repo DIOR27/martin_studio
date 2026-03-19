@@ -156,12 +156,14 @@ body {
 
 .studio-shell.is-palette-collapsed .sidebar .catalog-group,
 .studio-shell.is-palette-collapsed .sidebar .palette-item,
-.studio-shell.is-palette-collapsed .sidebar .section-title {
+.studio-shell.is-palette-collapsed .sidebar .section-title,
+.studio-shell.is-palette-collapsed .sidebar .palette-search {
   display: none;
 }
 
 .studio-shell.is-palette-collapsed .sidebar .panel-head {
   justify-content: center;
+  display: flex;
 }
 
 .studio-shell.is-inspector-collapsed .inspector {
@@ -274,6 +276,55 @@ body {
   margin-bottom: 20px;
 }
 
+.palette-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 0 14px;
+  padding: 0 0 12px;
+  background: rgba(22, 27, 34, 0.96);
+  backdrop-filter: blur(8px);
+}
+
+.palette-sticky .panel-head {
+  margin-bottom: 12px;
+}
+
+.palette-search {
+  margin: 0;
+}
+
+.studio-shell.is-palette-collapsed .sidebar .panel-head {
+  margin-bottom: 0;
+}
+
+.studio-shell.is-palette-collapsed .sidebar > .panel-head {
+  display: flex;
+}
+
+.studio-shell.is-palette-collapsed .sidebar {
+  padding: 10px 6px;
+}
+
+.studio-shell.is-palette-collapsed .sidebar .icon-btn.panel-toggle {
+  margin: 0 auto;
+}
+
+.palette-search-input {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0f141b;
+  color: var(--text);
+}
+
+.palette-search-input:focus {
+  outline: none;
+  border-color: rgba(47, 129, 247, 0.55);
+  box-shadow: 0 0 0 1px rgba(47, 129, 247, 0.2);
+}
+
 .catalog-group-toggle {
   width: 100%;
   display: flex;
@@ -354,6 +405,15 @@ body {
   margin-bottom: 12px;
 }
 
+.node-card.is-draggable {
+  cursor: grab;
+}
+
+.node-card.is-dragging {
+  opacity: 0.45;
+  transform: scale(0.995);
+}
+
 .node-card.is-selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(47, 129, 247, 0.2);
@@ -411,6 +471,12 @@ body {
   background: rgba(47, 129, 247, 0.06);
 }
 
+.dropzone-inline {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
 .dropzone.is-over {
   background: rgba(47, 129, 247, 0.14);
   color: var(--text);
@@ -449,6 +515,13 @@ body {
 
 .field textarea {
   min-height: 82px;
+}
+
+.asset-picker {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .field.compact label {

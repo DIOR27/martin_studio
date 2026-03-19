@@ -125,6 +125,21 @@ async function openStudio(context, preferredSourceContext) {
         return;
       }
 
+      if (message.type === "browseAsset" && message.payload) {
+        const assetPath = await importAssetToWorkspace(workspaceFolder, message.payload.mediaKind || "file");
+        if (assetPath) {
+          panel.webview.postMessage({
+            type: "assetSelected",
+            payload: {
+              nodeId: message.payload.nodeId,
+              prop: message.payload.prop,
+              value: assetPath,
+            },
+          });
+        }
+        return;
+      }
+
       if (message.type === "openPreviewBrowser" && message.payload && message.payload.url) {
         await vscode.commands.executeCommand("simpleBrowser.show", message.payload.url);
         return;
@@ -330,6 +345,44 @@ async function updateSourceFunction(workspaceFolder, sourcePath, functionName, f
 async function openFileInEditor(filePath) {
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
   await vscode.window.showTextDocument(doc, { preview: false });
+}
+
+async function importAssetToWorkspace(workspaceFolder, mediaKind) {
+  const filters = mediaKind === "video"
+    ? { Videos: ["mp4", "webm", "mov", "avi", "mkv"], All: ["*"] }
+    : { Images: ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"], All: ["*"] };
+  const selection = await vscode.window.showOpenDialog({
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    openLabel: "Add to assets",
+    filters,
+    defaultUri: vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, "assets")),
+  });
+  if (!selection || !selection.length) {
+    return "";
+  }
+
+  const sourcePath = selection[0].fsPath;
+  const assetsDir = path.join(workspaceFolder.uri.fsPath, "assets");
+  fs.mkdirSync(assetsDir, { recursive: true });
+
+  const parsed = path.parse(sourcePath);
+  let candidateName = `${parsed.name}${parsed.ext}`;
+  let candidatePath = path.join(assetsDir, candidateName);
+  let counter = 2;
+
+  while (fs.existsSync(candidatePath) && path.resolve(candidatePath) !== path.resolve(sourcePath)) {
+    candidateName = `${parsed.name}-${counter}${parsed.ext}`;
+    candidatePath = path.join(assetsDir, candidateName);
+    counter += 1;
+  }
+
+  if (path.resolve(candidatePath) !== path.resolve(sourcePath)) {
+    fs.copyFileSync(sourcePath, candidatePath);
+  }
+
+  return `/${path.relative(workspaceFolder.uri.fsPath, candidatePath).replace(/\\/g, "/")}`;
 }
 
 async function parseSourceFileToDesign(workspaceFolder, sourcePath) {

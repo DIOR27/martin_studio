@@ -25,6 +25,12 @@ const state = {
     canvas: 0,
     code: 0,
   },
+  paletteQuery: "",
+  focusState: {
+    paletteSearchActive: false,
+    paletteSearchStart: 0,
+    paletteSearchEnd: 0,
+  },
 };
 
 const WIDGET_ICONS = {
@@ -114,6 +120,12 @@ function onMessage(event) {
     state.projectContext = message.payload || null;
     initializeCodeFileSelection();
     render();
+    return;
+  }
+  if (message.type === "assetSelected") {
+    if (message.payload && message.payload.nodeId && message.payload.prop) {
+      updateProp(message.payload.nodeId, message.payload.prop, message.payload.value);
+    }
   }
 }
 
@@ -129,6 +141,7 @@ function initializeCodeFileSelection() {
 }
 
 function render() {
+  captureFocusState();
   captureScrollPositions();
   if (!state.catalog || !state.design) {
     document.getElementById("app").innerHTML = `<div class="empty-state">Loading MARTIN Studio...</div>`;
@@ -184,12 +197,20 @@ function render() {
   bindInspector();
   bindCodeTabs();
   bindGroupActions();
+  bindPaletteSearch();
   restoreScrollPositions();
+  restoreFocusState();
 }
 
 function renderPalette() {
   const groups = new Map();
+  const query = state.paletteQuery.trim().toLowerCase();
+  const isSearching = Boolean(query);
   for (const widget of state.catalog.widgets) {
+    const haystack = [widget.name, widget.category, widget.summary || ""].join(" ").toLowerCase();
+    if (query && !haystack.includes(query)) {
+      continue;
+    }
     if (!groups.has(widget.category)) {
       groups.set(widget.category, []);
     }
@@ -197,17 +218,31 @@ function renderPalette() {
   }
 
   return `
-    <div class="panel-head">
-      <p class="section-title">Palette</p>
-      <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="palette" title="${state.collapsed.palette ? "Expand palette" : "Collapse palette"}">${state.collapsed.palette ? "▸" : "◂"}</button>
+    <div class="palette-sticky">
+      <div class="panel-head">
+        <p class="section-title">Palette</p>
+        <button class="icon-btn panel-toggle" data-action="toggle-panel" data-panel="palette" title="${state.collapsed.palette ? "Expand palette" : "Collapse palette"}">${state.collapsed.palette ? "▸" : "◂"}</button>
+      </div>
+      <div class="palette-search">
+        <input
+          type="text"
+          class="palette-search-input"
+          data-role="palette-search"
+          placeholder="Search widgets"
+          value="${escapeHtml(state.paletteQuery)}"
+        >
+      </div>
     </div>
-    ${Array.from(groups.entries()).map(([category, widgets]) => `
-      <section class="catalog-group ${state.collapsedGroups[category] ? "is-collapsed" : ""}">
-        <button class="catalog-group-toggle" data-action="toggle-group" data-group="${escapeHtml(category)}" title="${state.collapsedGroups[category] ? "Expand group" : "Collapse group"}">
+    ${groups.size ? "" : `<div class="empty-state">No widgets match your search.</div>`}
+    ${Array.from(groups.entries()).map(([category, widgets]) => {
+      const collapsed = isSearching ? false : Boolean(state.collapsedGroups[category]);
+      return `
+      <section class="catalog-group ${collapsed ? "is-collapsed" : ""}">
+        <button class="catalog-group-toggle" data-action="toggle-group" data-group="${escapeHtml(category)}" title="${collapsed ? "Expand group" : "Collapse group"}">
           <span>${escapeHtml(category)}</span>
-          <span class="catalog-group-caret">${state.collapsedGroups[category] ? "▸" : "▾"}</span>
+          <span class="catalog-group-caret">${collapsed ? "▸" : "▾"}</span>
         </button>
-        ${state.collapsedGroups[category] ? "" : widgets.map((widget) => `
+        ${collapsed ? "" : widgets.map((widget) => `
           <button class="palette-item" draggable="true" data-widget="${escapeHtml(widget.name)}" title="${escapeHtml(widget.summary || widget.name)}">
             <span class="widget-icon">${escapeHtml(getWidgetIcon(widget.name))}</span>
             <span class="palette-copy">
@@ -217,7 +252,8 @@ function renderPalette() {
           </button>
         `).join("")}
       </section>
-    `).join("")}
+    `;
+    }).join("")}
   `;
 }
 
@@ -230,9 +266,15 @@ function renderNode(node, isRoot = false) {
   const selected = state.selectedId === node.id ? "is-selected" : "";
   const canReceiveChildren = widget && widget.accepts_children;
   const children = Array.isArray(node.children) ? node.children : [];
+  const childrenMarkup = canReceiveChildren
+    ? children.map((child, index) => `
+        <div class="dropzone dropzone-inline" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${index}">Drop widget here</div>
+        ${renderNode(child)}
+      `).join("")
+    : "";
 
   return `
-    <article class="node-card ${selected}" data-node-id="${escapeHtml(node.id)}">
+    <article class="node-card ${selected} ${!isRoot ? "is-draggable" : ""}" data-node-id="${escapeHtml(node.id)}" ${!isRoot ? `draggable="true"` : ""}>
       <div class="node-head">
         <div>
           <div class="node-title">${escapeHtml(node.type)}</div>
@@ -244,8 +286,8 @@ function renderNode(node, isRoot = false) {
         </div>
       </div>
       ${canReceiveChildren ? `
-        ${children.map((child) => renderNode(child)).join("")}
-        <div class="dropzone" data-drop-parent="${escapeHtml(node.id)}">Drop widget here</div>
+        ${childrenMarkup}
+        <div class="dropzone" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${children.length}">Drop widget here</div>
       ` : `<div class="hint">Leaf widget</div>`}
     </article>
   `;
@@ -285,6 +327,26 @@ function renderField(node, widget, param) {
       : param.default);
   const fieldId = `${node.id}_${param.name}`;
   const common = `data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(param.name)}"`;
+
+  if ((node.type === "Image" || node.type === "Video") && param.name === "src") {
+    const value = current === null || current === undefined ? "" : String(current);
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        <div class="asset-picker">
+          <input type="text" id="${escapeHtml(fieldId)}" value="${escapeHtml(value)}" ${common} data-field-type="${escapeHtml(param.type)}">
+          <button
+            type="button"
+            class="mini-btn"
+            data-editor-action="browse-asset"
+            data-node-id="${escapeHtml(node.id)}"
+            data-prop="${escapeHtml(param.name)}"
+            data-media-kind="${node.type === "Video" ? "video" : "image"}"
+          >Browse</button>
+        </div>
+      </div>
+    `;
+  }
 
   if (param.editor && param.editor.type === "collection") {
     const items = Array.isArray(current) ? current : [];
@@ -511,6 +573,17 @@ function bindGroupActions() {
   });
 }
 
+function bindPaletteSearch() {
+  const input = document.querySelector('[data-role="palette-search"]');
+  if (!input) {
+    return;
+  }
+  input.addEventListener("input", () => {
+    state.paletteQuery = input.value || "";
+    render();
+  });
+}
+
 function bindPaletteDrag() {
   document.querySelectorAll(".palette-item").forEach((element) => {
     element.addEventListener("dragstart", (event) => {
@@ -522,6 +595,9 @@ function bindPaletteDrag() {
 function bindDropzones() {
   document.querySelectorAll(".dropzone").forEach((zone) => {
     zone.addEventListener("dragover", (event) => {
+      if (!canHandleDrop(event, zone)) {
+        return;
+      }
       event.preventDefault();
       zone.classList.add("is-over");
     });
@@ -530,8 +606,14 @@ function bindDropzones() {
       event.preventDefault();
       zone.classList.remove("is-over");
       const widgetName = event.dataTransfer.getData("application/martin-widget");
+      const nodeId = event.dataTransfer.getData("application/martin-node");
+      const dropIndex = Number(zone.dataset.dropIndex ?? -1);
       if (widgetName) {
-        addNode(zone.dataset.dropParent, widgetName);
+        addNode(zone.dataset.dropParent, widgetName, dropIndex);
+        return;
+      }
+      if (nodeId) {
+        moveNode(nodeId, zone.dataset.dropParent, dropIndex);
       }
     });
   });
@@ -539,6 +621,18 @@ function bindDropzones() {
 
 function bindNodeActions() {
   document.querySelectorAll(".node-card").forEach((card) => {
+    if (card.getAttribute("draggable") === "true") {
+      card.addEventListener("dragstart", (event) => {
+        event.stopPropagation();
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
+        card.classList.add("is-dragging");
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("is-dragging");
+        document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
+      });
+    }
     card.addEventListener("click", (event) => {
       event.stopPropagation();
       if (event.target.closest("button")) {
@@ -584,6 +678,16 @@ function bindInspector() {
   });
   document.querySelectorAll('[data-editor-action="remove-key-value-entry"]').forEach((button) => {
     button.addEventListener("click", () => removeKeyValueEntry(button.dataset.nodeId, button.dataset.prop, Number(button.dataset.index)));
+  });
+  document.querySelectorAll('[data-editor-action="browse-asset"]').forEach((button) => {
+    button.addEventListener("click", () => vscode.postMessage({
+      type: "browseAsset",
+      payload: {
+        nodeId: button.dataset.nodeId,
+        prop: button.dataset.prop,
+        mediaKind: button.dataset.mediaKind,
+      },
+    }));
   });
   document.querySelectorAll('[data-editor-kind="collection-field"]').forEach((field) => {
     const eventName = field.type === "date" || field.type === "time" || field.type === "color" ? "change" : "blur";
@@ -702,7 +806,7 @@ function renderPreviewNode(node) {
   return `<div class="preview-generic" style="${boxStyle(props)}${extraStyle}"><div class="preview-label">${escapeHtml(node.type)}</div>${childHtml || `<div class="hint">${escapeHtml(summarizeNode(node))}</div>`}</div>`;
 }
 
-function addNode(parentId, widgetName) {
+function addNode(parentId, widgetName, insertIndex = -1) {
   const widget = getWidget(widgetName);
   const parent = findNodeById(state.design.root, parentId);
   if (!widget || !parent) {
@@ -710,7 +814,7 @@ function addNode(parentId, widgetName) {
   }
   const node = createNode(widget);
   parent.children = parent.children || [];
-  parent.children.push(node);
+  insertChild(parent, node, insertIndex);
   state.selectedId = node.id;
   render();
 }
@@ -751,6 +855,47 @@ function duplicateNode(nodeId) {
   render();
 }
 
+function moveNode(nodeId, targetParentId, targetIndex = -1) {
+  if (!nodeId || !targetParentId) {
+    return;
+  }
+  const targetParent = findNodeById(state.design.root, targetParentId);
+  if (!targetParent || nodeId === state.design.root.id || nodeId === targetParentId) {
+    return;
+  }
+  const draggedNode = findNodeById(state.design.root, nodeId);
+  const sourceParent = findParent(state.design.root, nodeId);
+  if (!draggedNode || !sourceParent) {
+    return;
+  }
+  if (containsNode(draggedNode, targetParentId)) {
+    return;
+  }
+
+  const sourceIndex = (sourceParent.children || []).findIndex((child) => child.id === nodeId);
+  if (sourceIndex < 0) {
+    return;
+  }
+  sourceParent.children.splice(sourceIndex, 1);
+
+  let normalizedIndex = Number.isInteger(targetIndex) ? targetIndex : targetParent.children.length;
+  if (sourceParent.id === targetParent.id && normalizedIndex > sourceIndex) {
+    normalizedIndex -= 1;
+  }
+  insertChild(targetParent, draggedNode, normalizedIndex);
+  state.selectedId = draggedNode.id;
+  render();
+}
+
+function insertChild(parent, child, insertIndex = -1) {
+  parent.children = parent.children || [];
+  if (!Number.isInteger(insertIndex) || insertIndex < 0 || insertIndex > parent.children.length) {
+    parent.children.push(child);
+    return;
+  }
+  parent.children.splice(insertIndex, 0, child);
+}
+
 function deepCloneNode(node) {
   const copied = clone(node);
   copied.children = (copied.children || []).map((child) => {
@@ -787,6 +932,34 @@ function restoreScrollPositions() {
     if (inspector) inspector.scrollTop = state.scrollPositions.inspector || 0;
     if (canvas) canvas.scrollTop = state.scrollPositions.canvas || 0;
     if (code) code.scrollTop = state.scrollPositions.code || 0;
+  });
+}
+
+function captureFocusState() {
+  const active = document.activeElement;
+  if (active && active.matches && active.matches('[data-role="palette-search"]')) {
+    state.focusState.paletteSearchActive = true;
+    state.focusState.paletteSearchStart = active.selectionStart || 0;
+    state.focusState.paletteSearchEnd = active.selectionEnd || 0;
+    return;
+  }
+  state.focusState.paletteSearchActive = false;
+}
+
+function restoreFocusState() {
+  if (!state.focusState.paletteSearchActive) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    const input = document.querySelector('[data-role="palette-search"]');
+    if (!input) {
+      return;
+    }
+    input.focus();
+    try {
+      input.setSelectionRange(state.focusState.paletteSearchStart, state.focusState.paletteSearchEnd);
+    } catch (_error) {
+    }
   });
 }
 
@@ -957,6 +1130,33 @@ function findParent(node, nodeId) {
 function removeNode(node, nodeId) {
   node.children = (node.children || []).filter((child) => child.id !== nodeId);
   for (const child of node.children) removeNode(child, nodeId);
+}
+
+function containsNode(node, candidateId) {
+  if (!node) {
+    return false;
+  }
+  if (node.id === candidateId) {
+    return true;
+  }
+  return (node.children || []).some((child) => containsNode(child, candidateId));
+}
+
+function canHandleDrop(event, zone) {
+  const widgetName = event.dataTransfer.getData("application/martin-widget");
+  if (widgetName) {
+    return true;
+  }
+  const nodeId = event.dataTransfer.getData("application/martin-node");
+  if (!nodeId) {
+    return false;
+  }
+  const targetParentId = zone.dataset.dropParent;
+  if (!targetParentId || nodeId === targetParentId) {
+    return false;
+  }
+  const draggedNode = findNodeById(state.design.root, nodeId);
+  return draggedNode ? !containsNode(draggedNode, targetParentId) : false;
 }
 
 function getWidget(name) {
