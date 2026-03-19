@@ -32,6 +32,7 @@ const state = {
     paletteSearchStart: 0,
     paletteSearchEnd: 0,
   },
+  dragActive: false,
 };
 
 const WIDGET_ICONS = {
@@ -76,6 +77,20 @@ const POSITIONAL_PROP_MAP = {
   Code: "content",
   Link: "content",
 };
+
+const PSEUDO_LEAF_WIDGETS = new Set([
+  "Text",
+  "Heading",
+  "Paragraph",
+  "Button",
+  "Link",
+  "Code",
+  "Image",
+  "Video",
+  "Raw",
+  "StyleTag",
+  "Stylesheet",
+]);
 
 function uid(prefix = "node") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -265,16 +280,23 @@ function renderCanvas() {
 function renderNode(node, isRoot = false) {
   const widget = getWidget(node.type);
   const selected = state.selectedId === node.id ? "is-selected" : "";
-  const canReceiveChildren = widget && widget.accepts_children;
   const children = Array.isArray(node.children) ? node.children : [];
-  const childrenClass = node.type === "Row" ? "node-children is-row" : "node-children";
+  const canReceiveChildren = Boolean(widget && widget.accepts_children && (!PSEUDO_LEAF_WIDGETS.has(node.type) || children.length));
+  const isRow = node.type === "Row";
+  const childrenClass = isRow ? "node-children is-row" : "node-children";
   const childrenMarkup = canReceiveChildren
-    ? children.map((child, index) => `
-        <div class="node-child-slot">
-          <div class="dropzone dropzone-inline" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${index}">Drop widget here</div>
-          ${renderNode(child)}
-        </div>
-      `).join("")
+    ? isRow
+      ? children.map((child) => `
+          <div class="node-child-slot node-child-slot-row">
+            ${renderNode(child)}
+          </div>
+        `).join("")
+      : children.map((child, index) => `
+          <div class="node-child-slot">
+            <div class="dropzone dropzone-inline" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${index}">+</div>
+            ${renderNode(child)}
+          </div>
+        `).join("")
     : "";
 
   return `
@@ -285,16 +307,14 @@ function renderNode(node, isRoot = false) {
           <div class="node-meta">${escapeHtml(summarizeNode(node))}</div>
         </div>
         <div class="node-actions">
-          ${!isRoot ? `<button class="icon-btn" data-action="duplicate-node" data-node-id="${escapeHtml(node.id)}">Duplicate</button>` : ""}
-          ${!isRoot ? `<button class="icon-btn" data-action="delete-node" data-node-id="${escapeHtml(node.id)}">Delete</button>` : ""}
+          ${!isRoot ? `<button class="icon-btn icon-btn-square" data-action="duplicate-node" data-node-id="${escapeHtml(node.id)}" title="Duplicate widget" aria-label="Duplicate widget">⧉</button>` : ""}
+          ${!isRoot ? `<button class="icon-btn icon-btn-square" data-action="delete-node" data-node-id="${escapeHtml(node.id)}" title="Delete widget" aria-label="Delete widget">✕</button>` : ""}
         </div>
       </div>
       ${canReceiveChildren ? `
         <div class="${childrenClass}">
           ${childrenMarkup}
-          <div class="node-child-slot node-child-slot-tail">
-            <div class="dropzone" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${children.length}">Drop widget here</div>
-          </div>
+          <div class="node-child-slot ${isRow ? "node-child-slot-row-drop is-tail" : "node-child-slot-tail"}"><div class="dropzone ${isRow ? "dropzone-row-side" : "dropzone-tail"}" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${children.length}">+</div></div>
         </div>
       ` : `<div class="hint">Leaf widget</div>`}
     </article>
@@ -581,6 +601,14 @@ function bindGroupActions() {
   });
 }
 
+function setDragActive(active) {
+  state.dragActive = Boolean(active);
+  const shell = document.querySelector(".studio-shell");
+  if (shell) {
+    shell.classList.toggle("is-drag-active", state.dragActive);
+  }
+}
+
 function bindPaletteSearch() {
   const input = document.querySelector('[data-role="palette-search"]');
   if (!input) {
@@ -595,7 +623,12 @@ function bindPaletteSearch() {
 function bindPaletteDrag() {
   document.querySelectorAll(".palette-item").forEach((element) => {
     element.addEventListener("dragstart", (event) => {
+      setDragActive(true);
       event.dataTransfer.setData("application/martin-widget", element.dataset.widget);
+    });
+    element.addEventListener("dragend", () => {
+      setDragActive(false);
+      document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
     });
   });
 }
@@ -617,10 +650,12 @@ function bindDropzones() {
       const nodeId = event.dataTransfer.getData("application/martin-node");
       const dropIndex = Number(zone.dataset.dropIndex ?? -1);
       if (widgetName) {
+        setDragActive(false);
         addNode(zone.dataset.dropParent, widgetName, dropIndex);
         return;
       }
       if (nodeId) {
+        setDragActive(false);
         moveNode(nodeId, zone.dataset.dropParent, dropIndex);
       }
     });
@@ -631,12 +666,14 @@ function bindNodeActions() {
   document.querySelectorAll(".node-card").forEach((card) => {
     if (card.getAttribute("draggable") === "true") {
       card.addEventListener("dragstart", (event) => {
+        setDragActive(true);
         event.stopPropagation();
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
         card.classList.add("is-dragging");
       });
       card.addEventListener("dragend", () => {
+        setDragActive(false);
         card.classList.remove("is-dragging");
         document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
       });

@@ -1,32 +1,38 @@
 # MARTIN Studio
 
-Extensión inicial para Visual Studio Code que consume el catálogo de widgets de `martin.studio` y ofrece:
+MARTIN Studio es una extension para Visual Studio Code para editar proyectos MARTIN de forma visual.
 
-- palette visual de widgets
-- canvas con drag & drop
+Abre una pagina Python del proyecto, muestra su estructura en un canvas, permite modificar widgets y propiedades, revisar codigo relacionado y guardar cambios al archivo fuente.
+
+## Incluye
+
+- apertura directa desde archivos `.py`
+- canvas visual con drag & drop
+- palette de widgets con busqueda
 - inspector de propiedades
-- vista de código generada para MARTIN
+- reordenacion de widgets dentro del editor
+- vistas de `Frontend`, `Backend` y `Design JSON`
+- preview en el navegador interno de VS Code
+- control de `martin run`
+- selector de assets para `Image` y `Video`
+- guardado con `Save to source`
 
-## Desarrollo
+## Uso
 
 1. Abre esta carpeta en VS Code.
-2. Ejecuta la extensión en modo debug (`F5`).
-3. La configuración incluida abre como workspace objetivo `C:\Users\diego\OneDrive\Documentos\Python\martin_framework`.
-4. En la ventana de Extension Development Host, lanza el comando `MARTIN Studio: Open Designer`.
+2. Pulsa `F5`.
+3. En la ventana `Extension Development Host`, abre tu proyecto MARTIN.
+4. Abre una pagina como `pages/home.py`.
+5. Usa `Open in MARTIN Studio`.
 
-## Configuración
-
-La extensión intenta detectar `martin_framework` automáticamente. También puedes fijarlo desde ajustes de VS Code:
+## Configuracion
 
 - `martinStudio.frameworkPath`
 - `martinStudio.pythonPath`
+- `martinStudio.previewBaseUrl`
 
-Esto permite desarrollar la extensión fuera del repo principal y seguir consumiendo `martin.studio`.
+## Estado
 
-## Archivo de diseño
+Version actual: `0.1.0`
 
-La extensión guarda el documento fuente en:
-
-`martin-studio.design.json`
-
-Ese archivo es el estado editable del diseñador. El panel de código genera Python MARTIN a partir de ese árbol.
+Es una version temprana, pero ya sirve para trabajar visualmente con paginas MARTIN reales.

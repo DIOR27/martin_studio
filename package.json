@@ -2,7 +2,7 @@
   "name": "martin-studio",
   "displayName": "MARTIN Studio",
   "description": "Visual editor for MARTIN Framework with drag and drop, property inspector and code generation.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "martin-framework",
   "engines": {
     "vscode": "^1.90.0"

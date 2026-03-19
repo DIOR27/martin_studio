@@ -457,7 +457,34 @@ body {
 }
 
 .node-children.is-row .node-child-slot {
-  flex: 1 1 260px;
+  flex: 1 1 180px;
+  max-width: 100%;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+}
+
+.node-children.is-row .node-child-slot-row {
+  flex: 1 1 180px;
+}
+
+.node-children.is-row .node-child-slot-row-drop {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  transition: flex-basis 120ms ease, width 120ms ease, min-width 120ms ease;
+}
+
+.node-children.is-row .node-child-slot-row-drop.is-tail {
+  flex-basis: 0;
+  min-width: 0;
+}
+
+.node-children.is-row .node-card {
+  margin-bottom: 0;
 }
 
 .icon-btn {
@@ -467,6 +494,18 @@ body {
   border-radius: 8px;
   cursor: pointer;
   padding: 4px 8px;
+}
+
+.icon-btn-square {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .icon-btn:hover {
@@ -485,26 +524,58 @@ body {
 .dropzone {
   border: 1px dashed rgba(47, 129, 247, 0.4);
   border-radius: 12px;
+  min-height: 48px;
   padding: 14px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
   background: rgba(47, 129, 247, 0.06);
+  font-size: 22px;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .dropzone-inline {
-  padding: 8px 12px;
-  margin-bottom: 10px;
+  min-height: 14px;
+  padding: 0 8px;
+  margin-bottom: 8px;
   font-size: 12px;
+  border-radius: 999px;
 }
 
 .node-children.is-row .dropzone-inline,
 .node-children.is-row .dropzone {
-  min-height: 44px;
+  min-height: 116px;
+}
+
+.dropzone-row-side {
+  min-height: 100%;
+  width: 100%;
+  font-size: 22px;
+}
+
+.dropzone-tail {
+  min-height: 28px;
+  font-size: 14px;
 }
 
 .dropzone.is-over {
   background: rgba(47, 129, 247, 0.14);
   color: var(--text);
+}
+
+.studio-shell.is-drag-active .dropzone {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.studio-shell.is-drag-active .node-children.is-row .node-child-slot-row-drop {
+  flex-basis: 180px;
+  width: 180px;
+  min-width: 180px;
 }
 
 .props-grid {
