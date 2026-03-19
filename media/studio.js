@@ -495,15 +495,37 @@ function renderCollectionField(node, param, item, index, field) {
     data-item-type="${escapeHtml(field.type || "string")}"
   `;
   const inputType = editorInputType(field.type);
-  return `
-    <div class="field compact">
-      <label for="${escapeHtml(fieldId)}">${escapeHtml(field.label || field.name)}</label>
+  let control = "";
+  if (field.type === "boolean") {
+    control = `
+      <input
+        type="checkbox"
+        id="${escapeHtml(fieldId)}"
+        ${common}
+        ${current ? "checked" : ""}
+      >
+    `;
+  } else if (field.multiline) {
+    control = `
+      <textarea
+        id="${escapeHtml(fieldId)}"
+        ${common}
+      >${escapeHtml(current ?? "")}</textarea>
+    `;
+  } else {
+    control = `
       <input
         type="${escapeHtml(inputType)}"
         id="${escapeHtml(fieldId)}"
-        value="${escapeHtml(current)}"
+        value="${escapeHtml(current ?? "")}"
         ${common}
       >
+    `;
+  }
+  return `
+    <div class="field compact">
+      <label for="${escapeHtml(fieldId)}">${escapeHtml(field.label || field.name)}</label>
+      ${control}
     </div>
   `;
 }
@@ -735,14 +757,17 @@ function bindInspector() {
     }));
   });
   document.querySelectorAll('[data-editor-kind="collection-field"]').forEach((field) => {
-    const eventName = field.type === "date" || field.type === "time" || field.type === "color" ? "change" : "blur";
+    const tagName = field.tagName.toLowerCase();
+    const eventName = field.type === "checkbox" || field.type === "date" || field.type === "time" || field.type === "color" || tagName === "select"
+      ? "change"
+      : "blur";
     field.addEventListener(eventName, () => updateCollectionField(
       field.dataset.nodeId,
       field.dataset.prop,
       Number(field.dataset.index),
       field.dataset.itemField,
       field.dataset.itemType,
-      field.value,
+      readCollectionFieldValue(field),
     ));
   });
   document.querySelectorAll('[data-editor-kind="key-value-key"], [data-editor-kind="key-value-value"]').forEach((field) => {
@@ -1017,7 +1042,10 @@ function addCollectionItem(nodeId, propName) {
   }
   const item = {};
   for (const field of param.editor.fields || []) {
-    if (field.type === "color") item[field.name] = "#6366f1";
+    if (Object.prototype.hasOwnProperty.call(field, "default")) item[field.name] = clone(field.default);
+    else if (field.type === "color") item[field.name] = "#6366f1";
+    else if (field.type === "boolean") item[field.name] = false;
+    else if (field.type === "integer" || field.type === "float") item[field.name] = "";
     else item[field.name] = "";
   }
   const current = Array.isArray(node.props?.[propName]) ? clone(node.props[propName]) : clone(widget.preset_props?.[propName] || []);
@@ -1121,7 +1149,17 @@ function readFieldValue(field) {
   return field.value;
 }
 
+function readCollectionFieldValue(field) {
+  if (field.type === "checkbox") {
+    return field.checked;
+  }
+  return field.value;
+}
+
 function parseEditorValue(type, rawValue) {
+  if (type === "boolean") {
+    return Boolean(rawValue);
+  }
   if (type === "integer") {
     return rawValue === "" ? null : Number.parseInt(rawValue, 10);
   }
