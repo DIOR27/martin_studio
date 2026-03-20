@@ -673,6 +673,11 @@ body {
   background: #121923;
 }
 
+.code-language-editor {
+  display: grid;
+  gap: 8px;
+}
+
 .field textarea {
   min-height: 82px;
 }
@@ -714,6 +719,8 @@ body {
 }
 
 .code-editor-field textarea {
+  position: relative;
+  z-index: 1;
   min-height: 140px;
   padding: 12px 14px;
   font-family: Consolas, "Cascadia Code", "Courier New", monospace;
@@ -722,11 +729,13 @@ body {
   tab-size: 2;
   white-space: pre;
   overflow: auto;
+  color: transparent;
+  caret-color: #dce7f3;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
-    #0b0f14;
+    transparent;
   border-color: rgba(120, 160, 210, 0.16);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  resize: vertical;
 }
 
 .code-editor-field textarea:focus {
@@ -734,9 +743,54 @@ body {
   box-shadow:
     0 0 0 1px rgba(47, 129, 247, 0.26),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  background: transparent;
+}
+
+.code-editor-surface {
+  position: relative;
+  min-height: 140px;
+  border-radius: 10px;
   background:
-    linear-gradient(180deg, rgba(47, 129, 247, 0.06), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
     #0b0f14;
+}
+
+.code-editor-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  pointer-events: none;
+  font-family: Consolas, "Cascadia Code", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  color: #dce7f3;
+}
+
+.code-editor-input::selection {
+  background: rgba(47, 129, 247, 0.32);
+}
+
+.tok-keyword {
+  color: #ff7b72;
+}
+
+.tok-string {
+  color: #a5d6ff;
+}
+
+.tok-comment {
+  color: #8b949e;
+}
+
+.tok-number {
+  color: #79c0ff;
+}
+
+.tok-property {
+  color: #d2a8ff;
 }
 
 .field input[type="date"],

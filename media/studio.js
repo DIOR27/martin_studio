@@ -435,6 +435,86 @@ function renderNumberEditor({
   `;
 }
 
+function getNodeParamValue(node, widget, paramName) {
+  if (node?.props && Object.prototype.hasOwnProperty.call(node.props, paramName)) {
+    return node.props[paramName];
+  }
+  if (widget?.preset_props && Object.prototype.hasOwnProperty.call(widget.preset_props, paramName)) {
+    return widget.preset_props[paramName];
+  }
+  const param = getWidgetParam(widget, paramName);
+  return param ? param.default : undefined;
+}
+
+function highlightCodeHtml(source, language) {
+  const escaped = escapeHtml(source || "");
+  const lang = String(language || "").toLowerCase();
+
+  if (lang === "html") {
+    return escaped
+      .replace(/(&lt;\/?)([a-zA-Z][\w:-]*)/g, '$1<span class="tok-keyword">$2</span>')
+      .replace(/([a-zA-Z-:]+)=(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="tok-property">$1</span>=<span class="tok-string">$2</span>')
+      .replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="tok-comment">$1</span>');
+  }
+
+  if (lang === "json") {
+    return escaped
+      .replace(/(&quot;[^&]*&quot;)(\s*:)/g, '<span class="tok-property">$1</span>$2')
+      .replace(/(:\s*)(&quot;.*?&quot;)/g, '$1<span class="tok-string">$2</span>')
+      .replace(/\b(true|false|null)\b/g, '<span class="tok-keyword">$1</span>')
+      .replace(/\b(-?\d+(\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+  }
+
+  if (lang === "css") {
+    return escaped
+      .replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="tok-comment">$1</span>')
+      .replace(/([.#]?[a-zA-Z_][\w\-.:#\s>+]*)\s*\{/g, '<span class="tok-keyword">$1</span>{')
+      .replace(/([a-z-]+)(\s*:)/gi, '<span class="tok-property">$1</span>$2')
+      .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="tok-string">$1</span>')
+      .replace(/\b(\d+(\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+  }
+
+  if (lang === "javascript" || lang === "js" || lang === "ts" || lang === "typescript") {
+    return escaped
+      .replace(/(\/\/.*?$|\/\*[\s\S]*?\*\/)/gm, '<span class="tok-comment">$1</span>')
+      .replace(/(&quot;.*?&quot;|&#39;.*?&#39;|`[\s\S]*?`)/g, '<span class="tok-string">$1</span>')
+      .replace(/\b(function|return|const|let|var|if|else|for|while|class|new|import|from|export|default|async|await|try|catch|throw|true|false|null|undefined)\b/g, '<span class="tok-keyword">$1</span>')
+      .replace(/\b(\d+(\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+  }
+
+  if (lang === "bash" || lang === "shell" || lang === "sh" || lang === "zsh") {
+    return escaped
+      .replace(/(#.*?$)/gm, '<span class="tok-comment">$1</span>')
+      .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="tok-string">$1</span>')
+      .replace(/\b(if|then|else|fi|for|do|done|while|case|esac|function|in|echo|export|alias|sudo|cd|ls|cat|grep|find|curl|wget|git|python|node|npm)\b/g, '<span class="tok-keyword">$1</span>')
+      .replace(/\$\w+/g, '<span class="tok-property">$&</span>');
+  }
+
+  if (lang === "powershell" || lang === "pwsh" || lang === "ps1") {
+    return escaped
+      .replace(/(#.*?$)/gm, '<span class="tok-comment">$1</span>')
+      .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="tok-string">$1</span>')
+      .replace(/\b(function|param|if|else|elseif|foreach|for|while|switch|return|try|catch|finally|throw)\b/gi, '<span class="tok-keyword">$1</span>')
+      .replace(/-[A-Za-z][\w-]*/g, '<span class="tok-property">$&</span>')
+      .replace(/\$\w[\w:]*/g, '<span class="tok-number">$&</span>');
+  }
+
+  if (lang === "custom") {
+    return escaped;
+  }
+
+  if (lang === "python" || lang === "py" || !lang) {
+    return escaped
+    .replace(/(#.*?$)/gm, '<span class="tok-comment">$1</span>')
+    .replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g, '<span class="tok-string">$1</span>')
+    .replace(/\b(def|class|return|if|elif|else|for|while|in|import|from|as|try|except|finally|with|lambda|yield|pass|break|continue|True|False|None|and|or|not)\b/g, '<span class="tok-keyword">$1</span>')
+    .replace(/\b(self)\b/g, '<span class="tok-property">$1</span>')
+    .replace(/\b(\d+(\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+  }
+
+  return escaped;
+}
+
 function renderField(node, widget, param) {
   const current = node.props && Object.prototype.hasOwnProperty.call(node.props, param.name)
     ? node.props[param.name]
@@ -468,18 +548,59 @@ function renderField(node, widget, param) {
 
   if (node.type === "Code" && param.name === "content") {
     const value = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+    const language = String(getNodeParamValue(node, widget, "language") || "python");
     return `
       <div class="field code-editor-field">
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
-        <textarea
-          id="${escapeHtml(fieldId)}"
-          ${common}
-          data-field-type="${escapeHtml(param.type)}"
-          spellcheck="false"
-          autocapitalize="off"
-          autocomplete="off"
-          autocorrect="off"
-        >${escapeHtml(value)}</textarea>
+        <div class="code-editor-surface">
+          <pre class="code-editor-highlight" aria-hidden="true" data-code-highlight="${escapeHtml(node.id)}_${escapeHtml(param.name)}">${highlightCodeHtml(value, language)}\n</pre>
+          <textarea
+            id="${escapeHtml(fieldId)}"
+            class="code-editor-input"
+            ${common}
+            data-field-type="${escapeHtml(param.type)}"
+            data-code-language="${escapeHtml(language)}"
+            data-code-highlight="${escapeHtml(node.id)}_${escapeHtml(param.name)}"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            autocorrect="off"
+          >${escapeHtml(value)}</textarea>
+        </div>
+      </div>
+    `;
+  }
+
+  if (node.type === "Code" && param.name === "language" && param.editor && param.editor.type === "code_language") {
+    const options = Array.isArray(param.editor.options) ? param.editor.options : [];
+    const currentValue = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+    const selectValue = options.includes(currentValue) ? currentValue : "custom";
+    const customValue = selectValue === "custom" ? currentValue.replace(/^custom$/i, "") : "";
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        <div class="code-language-editor">
+          <select
+            id="${escapeHtml(fieldId)}"
+            data-editor-kind="code-language-select"
+            data-node-id="${escapeHtml(node.id)}"
+            data-prop="${escapeHtml(param.name)}"
+          >
+            ${options.map((option) => `
+              <option value="${escapeHtml(String(option))}" ${selectValue === String(option) ? "selected" : ""}>${escapeHtml(String(option))}</option>
+            `).join("")}
+          </select>
+          ${selectValue === "custom" ? `
+            <input
+              type="text"
+              value="${escapeHtml(customValue)}"
+              placeholder="yaml, sql, xml..."
+              data-editor-kind="code-language-custom"
+              data-node-id="${escapeHtml(node.id)}"
+              data-prop="${escapeHtml(param.name)}"
+            >
+          ` : ""}
+        </div>
       </div>
     `;
   }
@@ -990,12 +1111,22 @@ function bindInspector() {
     if (tagName === "input" || tagName === "textarea") {
       field.addEventListener("input", () => {
         setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), readFieldValue(field));
+        if (field.classList.contains("code-editor-input")) {
+          updateCodeHighlightMirror(field);
+          syncCodeEditorScroll(field);
+        }
       });
     }
     if (field.type === "checkbox" || tagName === "select" || field.type === "date" || field.type === "time" || field.type === "color") {
       field.addEventListener("change", () => {
         setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), readFieldValue(field));
       });
+    }
+    if (field.classList.contains("code-editor-input")) {
+      field.addEventListener("keydown", (event) => handleCodeEditorKeydown(event, field));
+      field.addEventListener("scroll", () => syncCodeEditorScroll(field));
+      updateCodeHighlightMirror(field);
+      syncCodeEditorScroll(field);
     }
     field.addEventListener(eventName, () => updateProp(field.dataset.nodeId, field.dataset.prop, readFieldValue(field)));
   });
@@ -1028,6 +1159,25 @@ function bindInspector() {
       button.dataset.prop,
       button.dataset.fieldType,
       button.dataset.stepDirection,
+    ));
+  });
+  document.querySelectorAll('[data-editor-kind="code-language-select"]').forEach((field) => {
+    field.addEventListener("change", () => updateCodeLanguageField(
+      field.dataset.nodeId,
+      field.dataset.prop,
+      "select",
+      field.value,
+    ));
+  });
+  document.querySelectorAll('[data-editor-kind="code-language-custom"]').forEach((field) => {
+    field.addEventListener("input", () => {
+      setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), field.value.trim() || "custom");
+    });
+    field.addEventListener("blur", () => updateCodeLanguageField(
+      field.dataset.nodeId,
+      field.dataset.prop,
+      "custom",
+      field.value,
     ));
   });
   document.querySelectorAll('[data-editor-kind="collection-field"]').forEach((field) => {
@@ -1461,6 +1611,14 @@ function stepNumberField(nodeId, propName, fieldType, direction) {
   updateProp(nodeId, propName, parseEditorValue(fieldType, nextValue));
 }
 
+function updateCodeLanguageField(nodeId, propName, source, rawValue) {
+  const nextValue = source === "select"
+    ? (rawValue === "custom" ? "custom" : rawValue)
+    : (String(rawValue || "").trim() || "custom");
+  setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue);
+  updateProp(nodeId, propName, nextValue);
+}
+
 function removeCollectionItem(nodeId, propName, index) {
   const node = findNodeById(state.design.root, nodeId);
   if (!node) {
@@ -1612,6 +1770,125 @@ function computeSteppedValue(rawValue, fieldType, direction) {
   return fieldType === "float"
     ? String(Number(next.toFixed(2)))
     : String(Math.trunc(next));
+}
+
+function handleCodeEditorKeydown(event, field) {
+  if (!field || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+  const pairs = {
+    "(": ")",
+    "[": "]",
+    "{": "}",
+    "\"": "\"",
+    "'": "'",
+    "`": "`",
+    "<": ">",
+  };
+  const closers = new Set(Object.values(pairs));
+  const key = event.key;
+
+  if (Object.prototype.hasOwnProperty.call(pairs, key)) {
+    const open = key;
+    const close = pairs[key];
+    const start = field.selectionStart ?? 0;
+    const end = field.selectionEnd ?? start;
+    const value = field.value || "";
+    const selected = value.slice(start, end);
+    const nextChar = value.slice(start, start + 1);
+    const prevChar = value.slice(Math.max(0, start - 1), start);
+
+    if ((open === "\"" || open === "'" || open === "`") && selected.length === 0) {
+      if (nextChar === close) {
+        event.preventDefault();
+        field.setSelectionRange(start + 1, start + 1);
+        return;
+      }
+      if (prevChar && /[A-Za-z0-9_]/.test(prevChar)) {
+        return;
+      }
+    }
+
+    if (open === "<" && shouldBypassAngleBracketAutocomplete(field, start, end)) {
+      return;
+    }
+
+    event.preventDefault();
+    const insertion = `${open}${selected}${close}`;
+    field.setRangeText(insertion, start, end, "end");
+    if (!selected.length) {
+      field.setSelectionRange(start + 1, start + 1);
+    } else {
+      field.setSelectionRange(start + 1, start + 1 + selected.length);
+    }
+    triggerCodeEditorInput(field);
+    return;
+  }
+
+  if (closers.has(key) && (field.selectionStart ?? 0) === (field.selectionEnd ?? 0)) {
+    const start = field.selectionStart ?? 0;
+    const value = field.value || "";
+    if (value.slice(start, start + 1) === key) {
+      event.preventDefault();
+      field.setSelectionRange(start + 1, start + 1);
+      return;
+    }
+  }
+}
+
+function shouldBypassAngleBracketAutocomplete(field, start, end) {
+  const value = field.value || "";
+  const selected = value.slice(start, end);
+  if (selected.length) {
+    return false;
+  }
+  const nextChar = value.slice(start, start + 1);
+  const prevChar = value.slice(Math.max(0, start - 1), start);
+  if (nextChar === ">") {
+    return false;
+  }
+  if (prevChar === "<" || prevChar === "/" || prevChar === "!" || prevChar === "?") {
+    return false;
+  }
+  if (!prevChar) {
+    return true;
+  }
+  return /[\s=({[,;:+\-*]/.test(prevChar);
+}
+
+function triggerCodeEditorInput(field) {
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function updateCodeHighlightMirror(field) {
+  if (!field) {
+    return;
+  }
+  const highlightId = field.dataset.codeHighlight;
+  if (!highlightId) {
+    return;
+  }
+  const mirror = document.querySelector(`[data-code-highlight="${cssEscape(highlightId)}"]:not(textarea)`);
+  if (!mirror) {
+    return;
+  }
+  mirror.innerHTML = `${highlightCodeHtml(field.value, field.dataset.codeLanguage || "python")}\n`;
+}
+
+function syncCodeEditorScroll(field) {
+  if (!field) {
+    return;
+  }
+  const highlightId = field.dataset.codeHighlight;
+  if (!highlightId) {
+    return;
+  }
+  const mirror = document.querySelector(`[data-code-highlight="${cssEscape(highlightId)}"]:not(textarea)`);
+  if (!mirror) {
+    return;
+  }
+  mirror.scrollTop = field.scrollTop;
+  mirror.scrollLeft = field.scrollLeft;
 }
 
 function editorInputType(type) {
@@ -1945,6 +2222,10 @@ function pyValue(value, depth) {
     return `[\n${value.map((item) => `${indent}${pyValue(item, depth + 1)}`).join(",\n")}\n${"    ".repeat(depth - 1)}]`;
   }
   if (typeof value === "object") {
+    const martinExpr = pyMartinExpr(value, depth);
+    if (martinExpr) {
+      return martinExpr;
+    }
     const entries = Object.entries(value);
     if (!entries.length) return "{}";
     return `{\n${entries.map(([key, entryValue]) => `${indent}${pyString(key)}: ${pyValue(entryValue, depth + 1)}`).join(",\n")}\n${"    ".repeat(depth - 1)}}`;
@@ -1983,6 +2264,45 @@ function pyCalendarEvent(event, depth) {
     return "CalendarEvent()";
   }
   return `CalendarEvent(${fields.join(", ")})`;
+}
+
+function pyMartinExpr(value, depth) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  const exprType = value.__martin_expr__;
+  if (exprType === "Ref") {
+    const args = [pyValue(value.input_id, depth + 1)];
+    if (value.label) {
+      args.push("label=True");
+    }
+    return `Ref(${args.join(", ")})`;
+  }
+  if (exprType === "ApiCall") {
+    const parts = [];
+    if (value.url !== undefined) parts.push(pyValue(value.url, depth + 1));
+    if (value.method !== undefined && value.method !== "POST") parts.push(`method=${pyValue(value.method, depth + 1)}`);
+    if (value.body !== undefined && value.body !== null) parts.push(`body=${pyValue(value.body, depth + 1)}`);
+    if (value.target) parts.push(`target=${pyValue(value.target, depth + 1)}`);
+    if (value.loading) parts.push(`loading=${pyValue(value.loading, depth + 1)}`);
+    if (value.on_success) parts.push(`on_success=${pyValue(value.on_success, depth + 1)}`);
+    if (value.on_error) parts.push(`on_error=${pyValue(value.on_error, depth + 1)}`);
+    return `ApiCall(${parts.join(", ")})`;
+  }
+  if (exprType === "MethodCall") {
+    const parts = [];
+    if (value.method !== undefined) parts.push(pyValue(value.method, depth + 1));
+    if (value.params !== undefined && value.params !== null) parts.push(`params=${pyValue(value.params, depth + 1)}`);
+    if (value.args !== undefined && value.args !== null) parts.push(`args=${pyValue(value.args, depth + 1)}`);
+    if (value.kwargs !== undefined && value.kwargs !== null) parts.push(`kwargs=${pyValue(value.kwargs, depth + 1)}`);
+    if (value.endpoint && value.endpoint !== "/api/_method") parts.push(`endpoint=${pyValue(value.endpoint, depth + 1)}`);
+    if (value.target) parts.push(`target=${pyValue(value.target, depth + 1)}`);
+    if (value.loading) parts.push(`loading=${pyValue(value.loading, depth + 1)}`);
+    if (value.on_success) parts.push(`on_success=${pyValue(value.on_success, depth + 1)}`);
+    if (value.on_error) parts.push(`on_error=${pyValue(value.on_error, depth + 1)}`);
+    return `MethodCall(${parts.join(", ")})`;
+  }
+  return "";
 }
 
 function pyString(text) {
