@@ -38,6 +38,8 @@ const state = {
     pointerY: null,
     wheelBound: false,
   },
+  collapsedNodes: {},
+  inspectorDrafts: {},
 };
 
 const WIDGET_ICONS = {
@@ -97,12 +99,52 @@ const PSEUDO_LEAF_WIDGETS = new Set([
   "Stylesheet",
 ]);
 
+const COMPACT_ROW_WIDGETS = new Set([
+  "Raw",
+  "SideMenu",
+]);
+
 function uid(prefix = "node") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function buildDraftKey(parts) {
+  return Object.entries(parts)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}:${String(value)}`)
+    .join("|");
+}
+
+function getFieldDraftKey(nodeId, propName) {
+  return buildDraftKey({ scope: "prop", nodeId, propName });
+}
+
+function getCollectionDraftKey(nodeId, propName, index, fieldName, source = "main") {
+  return buildDraftKey({ scope: "collection", nodeId, propName, index, fieldName, source });
+}
+
+function setInspectorDraft(key, value) {
+  if (!key) {
+    return;
+  }
+  state.inspectorDrafts[key] = value;
+}
+
+function clearInspectorDraft(key) {
+  if (!key) {
+    return;
+  }
+  delete state.inspectorDrafts[key];
+}
+
+function readInspectorDraft(key, fallback) {
+  return Object.prototype.hasOwnProperty.call(state.inspectorDrafts, key)
+    ? state.inspectorDrafts[key]
+    : fallback;
 }
 
 function init() {
@@ -120,6 +162,7 @@ function onMessage(event) {
     state.projectContext = message.payload.projectContext || null;
     state.previewHtml = message.payload.previewHtml || "";
     state.selectedId = state.design.root.id;
+    initializeCollapsedNodes();
     initializeCodeFileSelection();
     render();
     return;
@@ -134,6 +177,7 @@ function onMessage(event) {
     state.previewHtml = message.payload.previewHtml || state.previewHtml;
     state.projectContext = message.payload.projectContext || state.projectContext;
     state.catalog = message.payload.catalog || state.catalog;
+    initializeCollapsedNodes();
     initializeCodeFileSelection();
     render();
     return;
@@ -288,12 +332,27 @@ function renderNode(node, isRoot = false) {
   const selected = state.selectedId === node.id ? "is-selected" : "";
   const children = Array.isArray(node.children) ? node.children : [];
   const canReceiveChildren = Boolean(widget && widget.accepts_children && (!PSEUDO_LEAF_WIDGETS.has(node.type) || children.length));
+  const isCollapsed = canReceiveChildren && !isRoot && Boolean(state.collapsedNodes[node.id]);
   const isRow = node.type === "Row";
+  const isCompactRowWidget = COMPACT_ROW_WIDGETS.has(node.type);
+  const compactRowChildren = isRow ? children.filter((child) => COMPACT_ROW_WIDGETS.has(child.type)) : [];
+  const regularRowChildren = isRow ? children.filter((child) => !COMPACT_ROW_WIDGETS.has(child.type)) : children;
   const childrenClass = isRow ? "node-children is-row" : "node-children";
-  const childrenMarkup = canReceiveChildren
+  const compactChildrenMarkup = !isCollapsed && isRow && compactRowChildren.length
+    ? `
+        <div class="node-children-compact">
+          ${compactRowChildren.map((child) => `
+            <div class="node-child-slot node-child-slot-compact">
+              ${renderNode(child)}
+            </div>
+          `).join("")}
+        </div>
+      `
+    : "";
+  const childrenMarkup = canReceiveChildren && !isCollapsed
     ? isRow
-      ? children.map((child) => `
-          <div class="node-child-slot node-child-slot-row">
+      ? regularRowChildren.map((child) => `
+          <div class="node-child-slot node-child-slot-row ${COMPACT_ROW_WIDGETS.has(child.type) ? "is-compact-row-item" : ""}">
             ${renderNode(child)}
           </div>
         `).join("")
@@ -306,23 +365,27 @@ function renderNode(node, isRoot = false) {
     : "";
 
   return `
-    <article class="node-card ${selected} ${!isRoot ? "is-draggable" : ""}" data-node-id="${escapeHtml(node.id)}" ${!isRoot ? `draggable="true"` : ""}>
+    <article class="node-card ${selected} ${!isRoot ? "is-draggable" : ""} ${isCompactRowWidget ? "is-compact-row-widget" : ""}" data-node-id="${escapeHtml(node.id)}" ${!isRoot ? `draggable="true"` : ""}>
       <div class="node-head">
         <div>
           <div class="node-title">${escapeHtml(node.type)}</div>
           <div class="node-meta">${escapeHtml(summarizeNode(node))}</div>
         </div>
         <div class="node-actions">
+          ${canReceiveChildren && !isRoot ? `<button class="icon-btn icon-btn-square" data-action="toggle-node-collapse" data-node-id="${escapeHtml(node.id)}" title="${isCollapsed ? "Expand widget" : "Collapse widget"}" aria-label="${isCollapsed ? "Expand widget" : "Collapse widget"}">${isCollapsed ? "▸" : "▾"}</button>` : ""}
           ${!isRoot ? `<button class="icon-btn icon-btn-square" data-action="duplicate-node" data-node-id="${escapeHtml(node.id)}" title="Duplicate widget" aria-label="Duplicate widget">⧉</button>` : ""}
           ${!isRoot ? `<button class="icon-btn icon-btn-square" data-action="delete-node" data-node-id="${escapeHtml(node.id)}" title="Delete widget" aria-label="Delete widget">✕</button>` : ""}
         </div>
       </div>
-      ${canReceiveChildren ? `
+      ${canReceiveChildren ? (isCollapsed
+        ? `<div class="hint">Collapsed · ${countDescendants(node)} nested widgets</div>`
+        : `
+        ${compactChildrenMarkup}
         <div class="${childrenClass}">
           ${childrenMarkup}
           <div class="node-child-slot ${isRow ? "node-child-slot-row-drop is-tail" : "node-child-slot-tail"}"><div class="dropzone ${isRow ? "dropzone-row-side" : "dropzone-tail"}" data-drop-parent="${escapeHtml(node.id)}" data-drop-index="${children.length}">+</div></div>
         </div>
-      ` : `<div class="hint">Leaf widget</div>`}
+      `) : `<div class="hint">Leaf widget</div>`}
     </article>
   `;
 }
@@ -353,17 +416,38 @@ function renderInspector() {
   `;
 }
 
+function renderNumberEditor({
+  fieldId,
+  value,
+  inputType,
+  extraAttributes = "",
+  actionName,
+  stepActionAttrs,
+}) {
+  return `
+    <div class="number-input-wrap">
+      <input type="${escapeHtml(inputType)}" id="${escapeHtml(fieldId)}" value="${escapeHtml(value)}" ${extraAttributes}>
+      <div class="number-stepper" aria-hidden="true">
+        <button type="button" class="number-step-btn" data-editor-action="${escapeHtml(actionName)}" data-step-direction="up" ${stepActionAttrs}>+</button>
+        <button type="button" class="number-step-btn" data-editor-action="${escapeHtml(actionName)}" data-step-direction="down" ${stepActionAttrs}>-</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderField(node, widget, param) {
   const current = node.props && Object.prototype.hasOwnProperty.call(node.props, param.name)
     ? node.props[param.name]
     : (widget.preset_props && Object.prototype.hasOwnProperty.call(widget.preset_props, param.name)
       ? widget.preset_props[param.name]
       : param.default);
+  const draftKey = getFieldDraftKey(node.id, param.name);
+  const draftCurrent = readInspectorDraft(draftKey, current);
   const fieldId = `${node.id}_${param.name}`;
   const common = `data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(param.name)}"`;
 
   if ((node.type === "Image" || node.type === "Video") && param.name === "src") {
-    const value = current === null || current === undefined ? "" : String(current);
+    const value = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
     return `
       <div class="field">
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
@@ -378,6 +462,24 @@ function renderField(node, widget, param) {
             data-media-kind="${node.type === "Video" ? "video" : "image"}"
           >Browse</button>
         </div>
+      </div>
+    `;
+  }
+
+  if (node.type === "Code" && param.name === "content") {
+    const value = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+    return `
+      <div class="field code-editor-field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        <textarea
+          id="${escapeHtml(fieldId)}"
+          ${common}
+          data-field-type="${escapeHtml(param.type)}"
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+        >${escapeHtml(value)}</textarea>
       </div>
     `;
   }
@@ -430,7 +532,7 @@ function renderField(node, widget, param) {
     return `
       <div class="field">
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
-        <input type="checkbox" id="${escapeHtml(fieldId)}" ${common} data-field-type="boolean" ${current ? "checked" : ""}>
+        <input type="checkbox" id="${escapeHtml(fieldId)}" ${common} data-field-type="boolean" ${draftCurrent ? "checked" : ""}>
       </div>
     `;
   }
@@ -441,7 +543,7 @@ function renderField(node, widget, param) {
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
         <select id="${escapeHtml(fieldId)}" ${common} data-field-type="enum">
           ${param.options.map((option) => `
-            <option value="${escapeHtml(String(option))}" ${String(current ?? "") === String(option) ? "selected" : ""}>${escapeHtml(String(option))}</option>
+            <option value="${escapeHtml(String(option))}" ${String(draftCurrent ?? "") === String(option) ? "selected" : ""}>${escapeHtml(String(option))}</option>
           `).join("")}
         </select>
       </div>
@@ -452,13 +554,28 @@ function renderField(node, widget, param) {
     return `
       <div class="field">
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
-        <textarea id="${escapeHtml(fieldId)}" ${common} data-field-type="${escapeHtml(param.type)}">${escapeHtml(current ? JSON.stringify(current, null, 2) : "")}</textarea>
+        <textarea id="${escapeHtml(fieldId)}" ${common} data-field-type="${escapeHtml(param.type)}">${escapeHtml(draftCurrent ? JSON.stringify(draftCurrent, null, 2) : "")}</textarea>
       </div>
     `;
   }
 
   const inputType = param.type === "integer" || param.type === "float" ? "number" : "text";
-  const value = current === null || current === undefined ? "" : String(current);
+  const value = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+  if (param.type === "integer" || param.type === "float") {
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderNumberEditor({
+          fieldId,
+          value,
+          inputType,
+          extraAttributes: `${common} data-field-type="${escapeHtml(param.type)}"`,
+          actionName: "step-number-field",
+          stepActionAttrs: `data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(param.name)}" data-field-type="${escapeHtml(param.type)}"`,
+        })}
+      </div>
+    `;
+  }
   return `
     <div class="field">
       <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
@@ -492,6 +609,8 @@ function renderCollectionItemEditor(node, param, item, index) {
 function renderCollectionField(node, param, item, index, field) {
   const fieldId = `${node.id}_${param.name}_${index}_${field.name}`;
   const current = item && Object.prototype.hasOwnProperty.call(item, field.name) ? item[field.name] : "";
+  const draftKey = getCollectionDraftKey(node.id, param.name, index, field.name);
+  const draftCurrent = readInspectorDraft(draftKey, current);
   const common = `
     data-editor-kind="collection-field"
     data-node-id="${escapeHtml(node.id)}"
@@ -508,25 +627,64 @@ function renderCollectionField(node, param, item, index, field) {
         type="checkbox"
         id="${escapeHtml(fieldId)}"
         ${common}
-        ${current ? "checked" : ""}
+        ${draftCurrent ? "checked" : ""}
       >
+    `;
+  } else if (field.type === "date") {
+    const dateText = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+    control = `
+      <div class="date-input-pair">
+        <input
+          type="text"
+          id="${escapeHtml(fieldId)}"
+          value="${escapeHtml(dateText)}"
+          placeholder="YYYY-MM-DD"
+          ${common}
+          data-date-source="text"
+        >
+        <input
+          type="date"
+          value="${escapeHtml(dateText)}"
+          ${common}
+          data-date-source="picker"
+          aria-label="${escapeHtml(field.label || field.name)} picker"
+        >
+      </div>
     `;
   } else if (field.multiline) {
     control = `
       <textarea
         id="${escapeHtml(fieldId)}"
         ${common}
-      >${escapeHtml(current ?? "")}</textarea>
+      >${escapeHtml(draftCurrent ?? "")}</textarea>
     `;
   } else {
+    if (field.type === "integer" || field.type === "float") {
+      const numericValue = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+      control = renderNumberEditor({
+        fieldId,
+        value: numericValue,
+        inputType,
+        extraAttributes: `${common}`,
+        actionName: "step-collection-number-field",
+        stepActionAttrs: `
+          data-node-id="${escapeHtml(node.id)}"
+          data-prop="${escapeHtml(param.name)}"
+          data-index="${index}"
+          data-item-field="${escapeHtml(field.name)}"
+          data-item-type="${escapeHtml(field.type || "string")}"
+        `,
+      });
+    } else {
     control = `
       <input
         type="${escapeHtml(inputType)}"
         id="${escapeHtml(fieldId)}"
-        value="${escapeHtml(current ?? "")}"
+        value="${escapeHtml(draftCurrent ?? "")}"
         ${common}
       >
     `;
+    }
   }
   return `
     <div class="field compact">
@@ -808,6 +966,12 @@ function bindNodeActions() {
       deleteNode(button.dataset.nodeId);
     });
   });
+  document.querySelectorAll('[data-action="toggle-node-collapse"]').forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleNodeCollapse(button.dataset.nodeId);
+    });
+  });
   document.querySelectorAll('[data-action="duplicate-node"]').forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -818,11 +982,21 @@ function bindNodeActions() {
 
 function bindInspector() {
   document.querySelectorAll("[data-prop]").forEach((field) => {
-    if (field.dataset.editorAction) {
+    if (field.dataset.editorAction || field.dataset.editorKind) {
       return;
     }
     const tagName = field.tagName.toLowerCase();
     const eventName = field.type === "checkbox" || tagName === "select" || field.type === "date" || field.type === "time" || field.type === "color" ? "change" : "blur";
+    if (tagName === "input" || tagName === "textarea") {
+      field.addEventListener("input", () => {
+        setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), readFieldValue(field));
+      });
+    }
+    if (field.type === "checkbox" || tagName === "select" || field.type === "date" || field.type === "time" || field.type === "color") {
+      field.addEventListener("change", () => {
+        setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), readFieldValue(field));
+      });
+    }
     field.addEventListener(eventName, () => updateProp(field.dataset.nodeId, field.dataset.prop, readFieldValue(field)));
   });
 
@@ -848,11 +1022,41 @@ function bindInspector() {
       },
     }));
   });
+  document.querySelectorAll('[data-editor-action="step-number-field"]').forEach((button) => {
+    button.addEventListener("click", () => stepNumberField(
+      button.dataset.nodeId,
+      button.dataset.prop,
+      button.dataset.fieldType,
+      button.dataset.stepDirection,
+    ));
+  });
   document.querySelectorAll('[data-editor-kind="collection-field"]').forEach((field) => {
     const tagName = field.tagName.toLowerCase();
     const eventName = field.type === "checkbox" || field.type === "date" || field.type === "time" || field.type === "color" || tagName === "select"
       ? "change"
       : "blur";
+    const syncDraft = () => {
+      syncCollectionDatePair(field);
+      setInspectorDraft(
+        getCollectionDraftKey(field.dataset.nodeId, field.dataset.prop, Number(field.dataset.index), field.dataset.itemField, field.dataset.dateSource || "main"),
+        readCollectionFieldValue(field),
+      );
+      if (field.dataset.itemType === "date") {
+        const partner = findCollectionDatePartner(field);
+        if (partner) {
+          setInspectorDraft(
+            getCollectionDraftKey(partner.dataset.nodeId, partner.dataset.prop, Number(partner.dataset.index), partner.dataset.itemField, partner.dataset.dateSource || "main"),
+            readCollectionFieldValue(partner),
+          );
+        }
+      }
+    };
+    if (tagName === "input" || tagName === "textarea") {
+      field.addEventListener("input", syncDraft);
+    }
+    if (field.type === "checkbox" || field.type === "date" || field.type === "time" || field.type === "color" || tagName === "select") {
+      field.addEventListener("change", syncDraft);
+    }
     field.addEventListener(eventName, () => updateCollectionField(
       field.dataset.nodeId,
       field.dataset.prop,
@@ -860,6 +1064,16 @@ function bindInspector() {
       field.dataset.itemField,
       field.dataset.itemType,
       readCollectionFieldValue(field),
+    ));
+  });
+  document.querySelectorAll('[data-editor-action="step-collection-number-field"]').forEach((button) => {
+    button.addEventListener("click", () => stepCollectionNumberField(
+      button.dataset.nodeId,
+      button.dataset.prop,
+      Number(button.dataset.index),
+      button.dataset.itemField,
+      button.dataset.itemType,
+      button.dataset.stepDirection,
     ));
   });
   document.querySelectorAll('[data-editor-kind="key-value-key"], [data-editor-kind="key-value-value"]').forEach((field) => {
@@ -1072,6 +1286,7 @@ function updateProp(nodeId, propName, value) {
   const node = findNodeById(state.design.root, nodeId);
   if (!node) return;
   node.props = node.props || {};
+  clearInspectorDraft(getFieldDraftKey(nodeId, propName));
   if (value === "" || value === null || value === undefined) delete node.props[propName];
   else node.props[propName] = value;
   render();
@@ -1103,26 +1318,100 @@ function captureFocusState() {
     state.focusState.paletteSearchActive = true;
     state.focusState.paletteSearchStart = active.selectionStart || 0;
     state.focusState.paletteSearchEnd = active.selectionEnd || 0;
+    delete state.focusState.inspectorField;
     return;
   }
   state.focusState.paletteSearchActive = false;
+  if (!active || !active.matches) {
+    delete state.focusState.inspectorField;
+    return;
+  }
+  const inspectorField = describeInspectorField(active);
+  if (!inspectorField) {
+    delete state.focusState.inspectorField;
+    return;
+  }
+  state.focusState.inspectorField = inspectorField;
 }
 
 function restoreFocusState() {
-  if (!state.focusState.paletteSearchActive) {
-    return;
-  }
   requestAnimationFrame(() => {
-    const input = document.querySelector('[data-role="palette-search"]');
-    if (!input) {
+    if (state.focusState.paletteSearchActive) {
+      const input = document.querySelector('[data-role="palette-search"]');
+      if (input) {
+        input.focus();
+        try {
+          input.setSelectionRange(state.focusState.paletteSearchStart, state.focusState.paletteSearchEnd);
+        } catch (_error) {
+        }
+      }
       return;
     }
-    input.focus();
-    try {
-      input.setSelectionRange(state.focusState.paletteSearchStart, state.focusState.paletteSearchEnd);
-    } catch (_error) {
+
+    const field = restoreInspectorFieldFocus();
+    if (!field) {
+      return;
     }
   });
+}
+
+function describeInspectorField(field) {
+  if (!field.closest(".inspector")) {
+    return null;
+  }
+  if (field.dataset.editorAction) {
+    return null;
+  }
+  const descriptor = {
+    selector: buildInspectorFieldSelector(field),
+    tagName: field.tagName ? field.tagName.toLowerCase() : "",
+  };
+  if (!descriptor.selector) {
+    return null;
+  }
+  if (descriptor.tagName === "input" || descriptor.tagName === "textarea") {
+    descriptor.selectionStart = typeof field.selectionStart === "number" ? field.selectionStart : null;
+    descriptor.selectionEnd = typeof field.selectionEnd === "number" ? field.selectionEnd : null;
+  }
+  return descriptor;
+}
+
+function buildInspectorFieldSelector(field) {
+  if (field.dataset.role === "palette-search") {
+    return '[data-role="palette-search"]';
+  }
+  if (field.dataset.editorKind === "collection-field") {
+    const dateSourceSelector = field.dataset.dateSource
+      ? `[data-date-source="${cssEscape(field.dataset.dateSource)}"]`
+      : "";
+    return `[data-editor-kind="collection-field"][data-node-id="${cssEscape(field.dataset.nodeId || "")}"][data-prop="${cssEscape(field.dataset.prop || "")}"][data-index="${cssEscape(field.dataset.index || "")}"][data-item-field="${cssEscape(field.dataset.itemField || "")}"]${dateSourceSelector}`;
+  }
+  if (field.dataset.editorKind === "key-value-key" || field.dataset.editorKind === "key-value-value") {
+    return `[data-editor-kind="${cssEscape(field.dataset.editorKind)}"][data-node-id="${cssEscape(field.dataset.nodeId || "")}"][data-prop="${cssEscape(field.dataset.prop || "")}"][data-index="${cssEscape(field.dataset.index || "")}"]`;
+  }
+  if (field.dataset.nodeId && field.dataset.prop) {
+    return `[data-node-id="${cssEscape(field.dataset.nodeId)}"][data-prop="${cssEscape(field.dataset.prop)}"]`;
+  }
+  return "";
+}
+
+function restoreInspectorFieldFocus() {
+  const descriptor = state.focusState.inspectorField;
+  if (!descriptor || !descriptor.selector) {
+    return null;
+  }
+  const field = document.querySelector(descriptor.selector);
+  if (!field) {
+    return null;
+  }
+  field.focus();
+  if ((descriptor.tagName === "input" || descriptor.tagName === "textarea") && typeof descriptor.selectionStart === "number") {
+    try {
+      field.setSelectionRange(descriptor.selectionStart, descriptor.selectionEnd ?? descriptor.selectionStart);
+    } catch (_error) {
+    }
+  }
+  return field;
 }
 
 function addCollectionItem(nodeId, propName) {
@@ -1141,8 +1430,35 @@ function addCollectionItem(nodeId, propName) {
     else item[field.name] = "";
   }
   const current = Array.isArray(node.props?.[propName]) ? clone(node.props[propName]) : clone(widget.preset_props?.[propName] || []);
+  const newIndex = current.length;
   current.push(item);
+  const firstField = Array.isArray(param.editor.fields) && param.editor.fields.length ? param.editor.fields[0] : null;
+  if (firstField) {
+    const dateSourceSelector = firstField.type === "date"
+      ? `[data-date-source="${cssEscape("text")}"]`
+      : "";
+    state.focusState.inspectorField = {
+      selector: `[data-editor-kind="collection-field"][data-node-id="${cssEscape(nodeId)}"][data-prop="${cssEscape(propName)}"][data-index="${cssEscape(String(newIndex))}"][data-item-field="${cssEscape(firstField.name)}"]${dateSourceSelector}`,
+      tagName: "input",
+      selectionStart: 0,
+      selectionEnd: 0,
+    };
+  }
   updateProp(nodeId, propName, current);
+}
+
+function stepNumberField(nodeId, propName, fieldType, direction) {
+  const selector = `[data-node-id="${cssEscape(nodeId)}"][data-prop="${cssEscape(propName)}"]`;
+  const input = document.querySelector(selector);
+  const nextValue = computeSteppedValue(input ? input.value : "", fieldType, direction);
+  state.focusState.inspectorField = {
+    selector,
+    tagName: "input",
+    selectionStart: null,
+    selectionEnd: null,
+  };
+  setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue);
+  updateProp(nodeId, propName, parseEditorValue(fieldType, nextValue));
 }
 
 function removeCollectionItem(nodeId, propName, index) {
@@ -1153,6 +1469,20 @@ function removeCollectionItem(nodeId, propName, index) {
   const current = Array.isArray(node.props?.[propName]) ? clone(node.props[propName]) : [];
   current.splice(index, 1);
   updateProp(nodeId, propName, current);
+}
+
+function stepCollectionNumberField(nodeId, propName, index, fieldName, fieldType, direction) {
+  const selector = `[data-editor-kind="collection-field"][data-node-id="${cssEscape(nodeId)}"][data-prop="${cssEscape(propName)}"][data-index="${cssEscape(String(index))}"][data-item-field="${cssEscape(fieldName)}"]`;
+  const input = document.querySelector(selector);
+  const nextValue = computeSteppedValue(input ? input.value : "", fieldType, direction);
+  state.focusState.inspectorField = {
+    selector,
+    tagName: "input",
+    selectionStart: null,
+    selectionEnd: null,
+  };
+  setInspectorDraft(getCollectionDraftKey(nodeId, propName, index, fieldName, "main"), nextValue);
+  updateCollectionField(nodeId, propName, index, fieldName, fieldType, nextValue);
 }
 
 function updateCollectionField(nodeId, propName, index, fieldName, fieldType, rawValue) {
@@ -1167,12 +1497,16 @@ function updateCollectionField(nodeId, propName, index, fieldName, fieldType, ra
   }
   current[index] = current[index] || {};
   const value = parseEditorValue(fieldType, rawValue);
-  if (value === "" || value === null || value === undefined) {
+  clearInspectorDraft(getCollectionDraftKey(nodeId, propName, index, fieldName, "main"));
+  clearInspectorDraft(getCollectionDraftKey(nodeId, propName, index, fieldName, "text"));
+  clearInspectorDraft(getCollectionDraftKey(nodeId, propName, index, fieldName, "picker"));
+  if (value === undefined) {
     delete current[index][fieldName];
   } else {
     current[index][fieldName] = value;
   }
-  updateProp(nodeId, propName, current);
+  node.props = node.props || {};
+  node.props[propName] = current;
 }
 
 function addKeyValueEntry(nodeId, propName) {
@@ -1245,6 +1579,9 @@ function readCollectionFieldValue(field) {
   if (field.type === "checkbox") {
     return field.checked;
   }
+  if (field.dataset.itemType === "date") {
+    return field.value.trim();
+  }
   return field.value;
 }
 
@@ -1258,7 +1595,23 @@ function parseEditorValue(type, rawValue) {
   if (type === "float") {
     return rawValue === "" ? null : Number.parseFloat(rawValue);
   }
+  if (type === "date" || type === "time" || type === "color") {
+    return rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+  }
   return rawValue;
+}
+
+function computeSteppedValue(rawValue, fieldType, direction) {
+  const step = fieldType === "float" ? 0.1 : 1;
+  const numeric = rawValue === "" || rawValue === null || rawValue === undefined
+    ? 0
+    : Number.parseFloat(rawValue);
+  const safeNumeric = Number.isFinite(numeric) ? numeric : 0;
+  const delta = direction === "down" ? -step : step;
+  const next = safeNumeric + delta;
+  return fieldType === "float"
+    ? String(Number(next.toFixed(2)))
+    : String(Math.trunc(next));
 }
 
 function editorInputType(type) {
@@ -1269,6 +1622,25 @@ function editorInputType(type) {
     return type;
   }
   return "text";
+}
+
+function findCollectionDatePartner(field) {
+  if (!field || field.dataset.itemType !== "date") {
+    return null;
+  }
+  const selector = `[data-editor-kind="collection-field"][data-node-id="${cssEscape(field.dataset.nodeId || "")}"][data-prop="${cssEscape(field.dataset.prop || "")}"][data-index="${cssEscape(field.dataset.index || "")}"][data-item-field="${cssEscape(field.dataset.itemField || "")}"][data-date-source="${cssEscape(field.dataset.dateSource === "picker" ? "text" : "picker")}"]`;
+  return document.querySelector(selector);
+}
+
+function syncCollectionDatePair(field) {
+  const partner = findCollectionDatePartner(field);
+  if (!partner) {
+    return;
+  }
+  const nextValue = field.value || "";
+  if (partner.value !== nextValue) {
+    partner.value = nextValue;
+  }
 }
 
 function saveDesign() {
@@ -1406,6 +1778,58 @@ function summarizeNode(node) {
   if (props.label) return String(props.label).slice(0, 72);
   const keys = Object.keys(props);
   return keys.length ? keys.join(", ") : "No props configured yet";
+}
+
+function countDescendants(node) {
+  let total = 0;
+  for (const child of node.children || []) {
+    total += 1 + countDescendants(child);
+  }
+  return total;
+}
+
+function shouldAutoCollapseNode(node, depth = 0) {
+  if (!node || depth === 0) {
+    return false;
+  }
+  const childCount = (node.children || []).length;
+  const totalDescendants = countDescendants(node);
+  return childCount >= 8 || totalDescendants >= 20 || depth >= 4;
+}
+
+function seedCollapsedNodes(node, depth = 0) {
+  if (!node) {
+    return;
+  }
+  if (shouldAutoCollapseNode(node, depth) && state.collapsedNodes[node.id] === undefined) {
+    state.collapsedNodes[node.id] = true;
+  }
+  for (const child of node.children || []) {
+    seedCollapsedNodes(child, depth + 1);
+  }
+}
+
+function expandSelectedPath() {
+  let currentId = state.selectedId;
+  while (currentId) {
+    delete state.collapsedNodes[currentId];
+    const parent = findParent(state.design.root, currentId);
+    currentId = parent ? parent.id : "";
+  }
+}
+
+function initializeCollapsedNodes() {
+  state.collapsedNodes = state.collapsedNodes || {};
+  seedCollapsedNodes(state.design.root, 0);
+  expandSelectedPath();
+}
+
+function toggleNodeCollapse(nodeId) {
+  if (!nodeId) {
+    return;
+  }
+  state.collapsedNodes[nodeId] = !state.collapsedNodes[nodeId];
+  render();
 }
 
 function generateFrontendCode(design) {
