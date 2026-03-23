@@ -151,6 +151,44 @@ const ICON_PROVIDER_LABELS = {
   custom: "Custom",
 };
 
+const ICON_PROVIDER_VARIANTS = {
+  fontawesome: ["solid", "regular", "brands"],
+  "material-symbols": ["rounded", "outlined", "sharp"],
+  "material-icons": ["filled", "outlined", "round", "two-tone", "sharp"],
+};
+
+const ICON_PREVIEW_GLYPHS = {
+  house: "⌂",
+  home: "⌂",
+  user: "◉",
+  person: "◉",
+  account: "◉",
+  gear: "⚙",
+  settings: "⚙",
+  cog: "⚙",
+  bell: "🔔",
+  notifications: "🔔",
+  star: "★",
+  heart: "♥",
+  favorite: "♥",
+  "arrow-up": "↑",
+  arrow_upward: "↑",
+  "arrow-right": "→",
+  arrow_forward: "→",
+  check: "✓",
+  xmark: "✕",
+  "x-lg": "✕",
+  close: "✕",
+  bars: "☰",
+  list: "☰",
+  menu: "☰",
+  whatsapp: "◍",
+  "calendar-event": "📅",
+  calendar_month: "📅",
+  calendar_today: "📅",
+  "calendar-month": "📅",
+};
+
 function uid(prefix = "node") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -382,7 +420,7 @@ function renderPalette() {
       <section class="catalog-group ${collapsed ? "is-collapsed" : ""}">
         <button class="catalog-group-toggle" data-action="toggle-group" data-group="${escapeHtml(category)}" title="${collapsed ? "Expand group" : "Collapse group"}">
           <span>${escapeHtml(category)}</span>
-          <span class="catalog-group-caret">${collapsed ? "▸" : "▾"}</span>
+          <span class="catalog-group-caret ${collapsed ? "" : "is-open"}">▸</span>
         </button>
         ${collapsed ? "" : widgets.map((widget) => `
           <button class="palette-item" draggable="true" data-widget="${escapeHtml(widget.name)}" title="${escapeHtml(widget.summary || widget.name)}">
@@ -448,7 +486,7 @@ function renderNode(node, isRoot = false) {
           <div class="node-meta">${escapeHtml(summarizeNode(node))}</div>
         </div>
         <div class="node-actions">
-          ${canReceiveChildren && !isRoot ? `<button class="icon-btn icon-btn-square" data-action="toggle-node-collapse" data-node-id="${escapeHtml(node.id)}" title="${isCollapsed ? "Expand widget" : "Collapse widget"}" aria-label="${isCollapsed ? "Expand widget" : "Collapse widget"}">${isCollapsed ? "▸" : "▾"}</button>` : ""}
+          ${canReceiveChildren && !isRoot ? `<button class="icon-btn icon-btn-square node-collapse-toggle ${isCollapsed ? "" : "is-open"}" data-action="toggle-node-collapse" data-node-id="${escapeHtml(node.id)}" title="${isCollapsed ? "Expand widget" : "Collapse widget"}" aria-label="${isCollapsed ? "Expand widget" : "Collapse widget"}"><span class="node-collapse-caret">▸</span></button>` : ""}
           ${!isRoot ? `<button class="icon-btn icon-btn-square" data-action="duplicate-node" data-node-id="${escapeHtml(node.id)}" title="Duplicate widget" aria-label="Duplicate widget">⧉</button>` : ""}
           ${!isRoot ? `<button class="icon-btn icon-btn-square" data-action="delete-node" data-node-id="${escapeHtml(node.id)}" title="Delete widget" aria-label="Delete widget">✕</button>` : ""}
         </div>
@@ -614,7 +652,6 @@ function renderIconWidgetEditor(node, fieldId, propName, value) {
   const draftValue = readInspectorDraft(getIconWidgetDraftKey(node.id, propName), value);
   const state = parseIconWidgetState(draftValue);
   const provider = state.mode;
-  const presets = ICON_PROVIDER_PRESETS[provider] || [];
   return `
     <div
       class="icon-widget-editor"
@@ -644,23 +681,13 @@ function renderIconWidgetEditor(node, fieldId, propName, value) {
             data-prop="${escapeHtml(propName)}"
           >
         ` : ""}
-        ${presets.length ? `
-          <div class="icon-chip-grid icon-chip-grid-names">
-            ${presets.map((preset) => `
-              <button
-                type="button"
-                class="icon-chip icon-chip-name ${state.nameValue === preset ? "is-active" : ""}"
-                data-editor-action="pick-icon-widget-name"
-                data-node-id="${escapeHtml(node.id)}"
-                data-prop="${escapeHtml(propName)}"
-                data-icon-name="${escapeHtml(preset)}"
-                title="${escapeHtml(preset)}"
-              >
-                <span class="icon-chip-label">${escapeHtml(preset)}</span>
-              </button>
-            `).join("")}
-          </div>
-        ` : ""}
+        ${renderIconVariantControl({
+          provider,
+          variant: state.variant,
+          nodeId: node.id,
+          propName,
+          kind: "icon-widget-variant",
+        })}
         <input
           type="text"
           value="${escapeHtml(state.nameValue)}"
@@ -669,6 +696,12 @@ function renderIconWidgetEditor(node, fieldId, propName, value) {
           data-node-id="${escapeHtml(node.id)}"
           data-prop="${escapeHtml(propName)}"
         >
+        ${renderIconFeedbackPanel({
+          provider: provider === "custom-provider" ? state.customProvider : provider,
+          name: state.nameValue,
+          variant: state.variant,
+          mode: "widget",
+        })}
       `}
     </div>
   `;
@@ -677,26 +710,9 @@ function renderIconWidgetEditor(node, fieldId, propName, value) {
 function renderIconNameEditor(node, widget, fieldId, propName, value) {
   const currentValue = value === null || value === undefined ? "" : String(value);
   const provider = getIconProviderValue(node, widget);
-  const presets = ICON_PROVIDER_PRESETS[provider] || [];
+  const variant = String(getNodeParamValue(node, widget, "variant") || "");
   return `
     <div class="icon-name-editor">
-      ${presets.length ? `
-        <div class="icon-chip-grid icon-chip-grid-names">
-          ${presets.map((preset) => `
-            <button
-              type="button"
-              class="icon-chip icon-chip-name ${currentValue === preset ? "is-active" : ""}"
-              data-editor-action="pick-icon-name"
-              data-node-id="${escapeHtml(node.id)}"
-              data-prop="${escapeHtml(propName)}"
-              data-icon-name="${escapeHtml(preset)}"
-              title="${escapeHtml(preset)}"
-            >
-              <span class="icon-chip-label">${escapeHtml(preset)}</span>
-            </button>
-          `).join("")}
-        </div>
-      ` : ""}
       <input
         type="text"
         id="${escapeHtml(fieldId)}"
@@ -706,6 +722,154 @@ function renderIconNameEditor(node, widget, fieldId, propName, value) {
         data-prop="${escapeHtml(propName)}"
         data-field-type="string"
       >
+      ${renderIconFeedbackPanel({
+        provider,
+        name: currentValue,
+        variant,
+        mode: "icon",
+      })}
+    </div>
+  `;
+}
+
+function getIconPreviewGlyph(provider, iconName) {
+  const key = String(iconName || "").trim();
+  if (!key) {
+    return provider === "plain" ? "✦" : "◌";
+  }
+  return ICON_PREVIEW_GLYPHS[key] || ICON_PREVIEW_GLYPHS[key.toLowerCase()] || key.slice(0, 1).toUpperCase();
+}
+
+function renderIconPreviewMarkup(provider, name, variant) {
+  const normalizedProvider = String(provider || "").trim();
+  const normalizedName = String(name || "").trim();
+  const normalizedVariant = String(variant || "").trim();
+
+  if (!normalizedProvider || normalizedProvider === "plain" || normalizedProvider === "none") {
+    return `<span class="icon-feedback-glyph">${escapeHtml(getIconPreviewGlyph("plain", normalizedName))}</span>`;
+  }
+
+  if (!normalizedName) {
+    return `<span class="icon-feedback-glyph">${escapeHtml(getIconPreviewGlyph(normalizedProvider, ""))}</span>`;
+  }
+
+  if (normalizedProvider === "fontawesome") {
+    const family = normalizedVariant === "brands"
+      ? "fa-brands"
+      : normalizedVariant === "regular"
+        ? "fa-regular"
+        : "fa-solid";
+    return `<i class="icon-feedback-real ${escapeHtml(family)} fa-${escapeHtml(normalizedName)}" aria-hidden="true"></i>`;
+  }
+
+  if (normalizedProvider === "bootstrap-icons") {
+    return `<i class="icon-feedback-real bi bi-${escapeHtml(normalizedName)}" aria-hidden="true"></i>`;
+  }
+
+  if (normalizedProvider === "mdi") {
+    return `<i class="icon-feedback-real mdi mdi-${escapeHtml(normalizedName)}" aria-hidden="true"></i>`;
+  }
+
+  if (normalizedProvider === "material-symbols") {
+    const materialVariant = normalizedVariant || "outlined";
+    return `<span class="icon-feedback-real material-symbols-${escapeHtml(materialVariant)}">${escapeHtml(normalizedName)}</span>`;
+  }
+
+  if (normalizedProvider === "material-icons") {
+    const className = normalizedVariant === "outlined"
+      ? "material-icons-outlined"
+      : normalizedVariant === "round"
+        ? "material-icons-round"
+        : normalizedVariant === "two-tone"
+          ? "material-icons-two-tone"
+          : normalizedVariant === "sharp"
+            ? "material-icons-sharp"
+            : "material-icons";
+    return `<span class="icon-feedback-real ${escapeHtml(className)}">${escapeHtml(normalizedName)}</span>`;
+  }
+
+  return `<span class="icon-feedback-glyph">${escapeHtml(getIconPreviewGlyph(normalizedProvider, normalizedName))}</span>`;
+}
+
+function renderIconVariantControl({ provider, variant, nodeId, propName, kind }) {
+  const normalizedProvider = provider === "custom-provider" ? "custom" : provider;
+  const options = ICON_PROVIDER_VARIANTS[normalizedProvider] || [];
+  if (!normalizedProvider || normalizedProvider === "plain" || normalizedProvider === "none" || normalizedProvider === "bootstrap-icons" || normalizedProvider === "mdi") {
+    return "";
+  }
+  if (options.length) {
+    return `
+      <select
+        data-editor-kind="${escapeHtml(kind)}"
+        data-node-id="${escapeHtml(nodeId)}"
+        data-prop="${escapeHtml(propName)}"
+      >
+        <option value="">Default variant</option>
+        ${options.map((option) => `
+          <option value="${escapeHtml(option)}" ${variant === option ? "selected" : ""}>${escapeHtml(option)}</option>
+        `).join("")}
+      </select>
+    `;
+  }
+  return `
+    <input
+      type="text"
+      value="${escapeHtml(variant || "")}"
+      placeholder="Variant"
+      data-editor-kind="${escapeHtml(kind)}"
+      data-node-id="${escapeHtml(nodeId)}"
+      data-prop="${escapeHtml(propName)}"
+    >
+  `;
+}
+
+function getIconFeedbackHint(provider, variant, name, mode) {
+  const normalizedProvider = String(provider || "").trim();
+  if (!normalizedProvider || normalizedProvider === "plain" || normalizedProvider === "none") {
+    return mode === "widget"
+      ? "Using a plain glyph or emoji. No icon pack needed."
+      : "Using a plain icon value. No provider or variant required.";
+  }
+  if (normalizedProvider === "fontawesome") {
+    if (!variant) {
+      return "Font Awesome usually needs a variant like solid, regular or brands.";
+    }
+    return `Font Awesome is configured with variant "${variant}".`;
+  }
+  if (normalizedProvider === "material-symbols") {
+    return variant
+      ? `Material Symbols variant "${variant}" selected.`
+      : "Material Symbols supports rounded, outlined or sharp variants.";
+  }
+  if (normalizedProvider === "material-icons") {
+    return variant
+      ? `Material Icons variant "${variant}" selected.`
+      : "Material Icons supports filled, outlined, round, two-tone or sharp.";
+  }
+  if (normalizedProvider === "bootstrap-icons" || normalizedProvider === "mdi") {
+    return `${ICON_PROVIDER_LABELS[normalizedProvider] || normalizedProvider} does not usually need a variant.`;
+  }
+  if (!name) {
+    return "Add an icon name to complete this configuration.";
+  }
+  return `Custom provider "${normalizedProvider}" will use the icon name you entered.`;
+}
+
+function renderIconFeedbackPanel({ provider, name, variant, mode }) {
+  const displayProvider = provider || "plain";
+  const signature = mode === "widget"
+    ? `Icon(name="${name || "..."}", provider="${displayProvider || "..."}"${variant ? `, variant="${variant}"` : ""})`
+    : `provider="${displayProvider || "none"}"${variant ? `  variant="${variant}"` : ""}  name="${name || "..."}"`;
+  return `
+    <div class="icon-feedback-card">
+      <div class="icon-feedback-preview">
+        ${renderIconPreviewMarkup(displayProvider, name, variant)}
+      </div>
+      <div class="icon-feedback-copy">
+        <strong>${escapeHtml(name || "Preview pending")}</strong>
+        <small>${escapeHtml(getIconFeedbackHint(displayProvider, variant, name, mode))}</small>
+        <code>${escapeHtml(signature)}</code>
+      </div>
     </div>
   `;
 }
@@ -756,12 +920,16 @@ function renderConditionEditor(node, fieldId, propName, value) {
   return `
     <div class="condition-editor" data-editor-kind="condition-root" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
       <label class="inspector-check inspector-check-inline condition-toggle ${enabled ? "is-on" : ""}">
-        <input type="checkbox" data-editor-kind="condition-enabled" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}" ${enabled ? "checked" : ""}>
-        <span class="inspector-check-box" aria-hidden="true"></span>
-        <span class="inspector-check-copy">
-          <span class="inspector-check-title-row">
-            <strong>Enable ${escapeHtml(propName)}</strong>
+        <span class="condition-toggle-head">
+          <span class="inspector-check-copy">
+            <span class="inspector-check-title-row">
+              <strong>Enable ${escapeHtml(propName)}</strong>
+            </span>
           </span>
+          <input type="checkbox" data-editor-kind="condition-enabled" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}" ${enabled ? "checked" : ""}>
+          <span class="inspector-check-box" aria-hidden="true"></span>
+        </span>
+        <span class="inspector-check-copy">
           <small>Show editor for this rule.</small>
         </span>
       </label>
@@ -1006,6 +1174,22 @@ function renderField(node, widget, param) {
       <div class="field">
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
         ${renderIconNameEditor(node, widget, fieldId, param.name, draftCurrent)}
+      </div>
+    `;
+  }
+
+  if (node.type === "Icon" && param.name === "variant") {
+    const provider = getIconProviderValue(node, widget);
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderIconVariantControl({
+          provider,
+          variant: draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent),
+          nodeId: node.id,
+          propName: param.name,
+          kind: "icon-field-variant",
+        })}
       </div>
     `;
   }
@@ -1711,6 +1895,11 @@ function bindInspector() {
     field.addEventListener("input", () => syncIconWidgetDraft(field.dataset.nodeId, field.dataset.prop));
     field.addEventListener("blur", () => updateIconWidgetField(field.dataset.nodeId, field.dataset.prop));
   });
+  document.querySelectorAll('[data-editor-kind="icon-widget-variant"]').forEach((field) => {
+    field.addEventListener("input", () => syncIconWidgetDraft(field.dataset.nodeId, field.dataset.prop));
+    field.addEventListener("change", () => updateIconWidgetField(field.dataset.nodeId, field.dataset.prop));
+    field.addEventListener("blur", () => updateIconWidgetField(field.dataset.nodeId, field.dataset.prop));
+  });
   document.querySelectorAll('[data-editor-kind="icon-provider-select"]').forEach((field) => {
     field.addEventListener("change", () => updateIconProviderField(
       field.dataset.nodeId,
@@ -1729,6 +1918,13 @@ function bindInspector() {
       "custom",
       field.value,
     ));
+  });
+  document.querySelectorAll('[data-editor-kind="icon-field-variant"]').forEach((field) => {
+    field.addEventListener("input", () => {
+      setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), field.value);
+    });
+    field.addEventListener("change", () => updateProp(field.dataset.nodeId, field.dataset.prop, field.value || ""));
+    field.addEventListener("blur", () => updateProp(field.dataset.nodeId, field.dataset.prop, field.value || ""));
   });
   document.querySelectorAll('[data-editor-kind="code-language-select"]').forEach((field) => {
     field.addEventListener("change", () => updateCodeLanguageField(
@@ -2259,14 +2455,19 @@ function readIconWidgetEditorValue(nodeId, propName) {
     ? (root.querySelector('[data-editor-kind="icon-widget-provider-custom"]')?.value || "").trim()
     : mode;
   const name = (root.querySelector('[data-editor-kind="icon-widget-name"]')?.value || "").trim();
+  const variant = (root.querySelector('[data-editor-kind="icon-widget-variant"]')?.value || "").trim();
   if (!provider || !name) {
     return "";
   }
-  return {
+  const payload = {
     __martin_expr__: "IconWidget",
     name,
     provider,
   };
+  if (variant) {
+    payload.variant = variant;
+  }
+  return payload;
 }
 
 function removeCollectionItem(nodeId, propName, index) {

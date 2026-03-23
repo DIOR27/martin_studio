@@ -768,13 +768,19 @@ function getWebviewHtml(webview, extensionUri) {
   const nonce = String(Date.now());
   return `<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: https: http:; frame-src ${webview.cspSource} https: http:;" />
-  <link rel="stylesheet" href="${styleUri}">
-  <title>MARTIN Studio</title>
-</head>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline' https:; font-src ${webview.cspSource} data: https:; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: https: http:; frame-src ${webview.cspSource} https: http:;" />
+    <link rel="stylesheet" href="${styleUri}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@400&family=Material+Symbols+Rounded:wght@400&family=Material+Symbols+Sharp:wght@400&family=Material+Icons&family=Material+Icons+Outlined&family=Material+Icons+Round&family=Material+Icons+Two+Tone&family=Material+Icons+Sharp">
+    <title>MARTIN Studio</title>
+  </head>
 <body>
   <div id="app"></div>
   <script nonce="${nonce}">
