@@ -1317,18 +1317,36 @@ function renderField(node, widget, param) {
 
 function renderCollectionItemEditor(node, param, item, index) {
   const fields = Array.isArray(param.editor.fields) ? param.editor.fields : [];
+  const summaryField = fields.find((field) => {
+    const value = item && Object.prototype.hasOwnProperty.call(item, field.name) ? item[field.name] : "";
+    return value !== "" && value !== null && value !== undefined;
+  });
+  const summaryValue = summaryField ? item[summaryField.name] : "";
   return `
     <div class="collection-card">
       <div class="collection-card-head">
-        <strong>${escapeHtml(param.editor.item_label || "Item")} ${index + 1}</strong>
-        <button
-          type="button"
-          class="mini-btn danger"
-          data-editor-action="remove-collection-item"
-          data-node-id="${escapeHtml(node.id)}"
-          data-prop="${escapeHtml(param.name)}"
-          data-index="${index}"
-        >Remove</button>
+        <div class="collection-card-title">
+          <strong>${escapeHtml(param.editor.item_label || "Item")} ${index + 1}</strong>
+          ${summaryValue !== "" ? `<span class="collection-card-summary">${escapeHtml(String(summaryValue))}</span>` : ""}
+        </div>
+        <div class="collection-card-actions">
+          <button
+            type="button"
+            class="mini-btn"
+            data-editor-action="duplicate-collection-item"
+            data-node-id="${escapeHtml(node.id)}"
+            data-prop="${escapeHtml(param.name)}"
+            data-index="${index}"
+          >Duplicate</button>
+          <button
+            type="button"
+            class="mini-btn danger"
+            data-editor-action="remove-collection-item"
+            data-node-id="${escapeHtml(node.id)}"
+            data-prop="${escapeHtml(param.name)}"
+            data-index="${index}"
+          >Remove</button>
+        </div>
       </div>
       <div class="collection-grid">
         ${fields.map((field) => renderCollectionField(node, param, item, index, field)).join("")}
@@ -1361,6 +1379,18 @@ function renderCollectionField(node, param, item, index, field) {
         ${draftCurrent ? "checked" : ""}
       >
     `;
+  } else if (field.type === "enum") {
+    const options = Array.isArray(field.options) ? field.options : [];
+    control = `
+      <select id="${escapeHtml(fieldId)}" ${common}>
+        ${options.map((option) => {
+          const normalized = typeof option === "object" && option !== null
+            ? { value: String(option.value ?? option.label ?? ""), label: String(option.label ?? option.value ?? "") }
+            : { value: String(option), label: String(option) };
+          return `<option value="${escapeHtml(normalized.value)}" ${String(draftCurrent ?? "") === normalized.value ? "selected" : ""}>${escapeHtml(normalized.label)}</option>`;
+        }).join("")}
+      </select>
+    `;
   } else if (field.type === "date") {
     const dateText = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
     control = `
@@ -1381,6 +1411,17 @@ function renderCollectionField(node, param, item, index, field) {
           aria-label="${escapeHtml(field.label || field.name)} picker"
         >
       </div>
+    `;
+  } else if (field.type === "json") {
+    const textValue = draftCurrent === null || draftCurrent === undefined
+      ? ""
+      : (typeof draftCurrent === "string" ? draftCurrent : JSON.stringify(draftCurrent, null, 2));
+    control = `
+      <textarea
+        id="${escapeHtml(fieldId)}"
+        ${common}
+        spellcheck="false"
+      >${escapeHtml(textValue)}</textarea>
     `;
   } else if (field.multiline) {
     control = `
@@ -1828,6 +1869,9 @@ function bindInspector() {
   });
   document.querySelectorAll('[data-editor-action="remove-collection-item"]').forEach((button) => {
     button.addEventListener("click", () => removeCollectionItem(button.dataset.nodeId, button.dataset.prop, Number(button.dataset.index)));
+  });
+  document.querySelectorAll('[data-editor-action="duplicate-collection-item"]').forEach((button) => {
+    button.addEventListener("click", () => duplicateCollectionItem(button.dataset.nodeId, button.dataset.prop, Number(button.dataset.index)));
   });
   document.querySelectorAll('[data-editor-action="add-key-value-entry"]').forEach((button) => {
     button.addEventListener("click", () => addKeyValueEntry(button.dataset.nodeId, button.dataset.prop));
@@ -2376,6 +2420,21 @@ function addCollectionItem(nodeId, propName) {
   updateProp(nodeId, propName, current);
 }
 
+function duplicateCollectionItem(nodeId, propName, index) {
+  const node = findNodeById(state.design.root, nodeId);
+  const widget = getWidget(node?.type);
+  if (!node || !widget) {
+    return;
+  }
+  const current = Array.isArray(node.props?.[propName]) ? clone(node.props[propName]) : clone(widget.preset_props?.[propName] || []);
+  const source = current[index];
+  if (!source) {
+    return;
+  }
+  current.splice(index + 1, 0, clone(source));
+  updateProp(nodeId, propName, current);
+}
+
 function stepNumberField(nodeId, propName, fieldType, direction) {
   const selector = `[data-node-id="${cssEscape(nodeId)}"][data-prop="${cssEscape(propName)}"]`;
   const input = document.querySelector(selector);
@@ -2591,6 +2650,16 @@ function readCollectionFieldValue(field) {
   if (field.dataset.itemType === "date") {
     return field.value.trim();
   }
+  if (field.dataset.itemType === "json") {
+    if (!field.value.trim()) {
+      return null;
+    }
+    try {
+      return JSON.parse(field.value);
+    } catch {
+      return field.value;
+    }
+  }
   return field.value;
 }
 
@@ -2606,6 +2675,19 @@ function parseEditorValue(type, rawValue) {
   }
   if (type === "date" || type === "time" || type === "color") {
     return rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+  }
+  if (type === "json") {
+    if (rawValue === null || rawValue === undefined || rawValue === "") {
+      return null;
+    }
+    if (typeof rawValue === "string") {
+      try {
+        return JSON.parse(rawValue);
+      } catch {
+        return rawValue;
+      }
+    }
+    return rawValue;
   }
   return rawValue;
 }

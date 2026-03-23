@@ -1284,10 +1284,37 @@ body {
   margin-bottom: 10px;
 }
 
+.collection-card-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.collection-card-summary {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.collection-card-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .collection-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.collection-grid .field:has(textarea),
+.collection-grid .field:has(.date-input-pair) {
+  grid-column: 1 / -1;
 }
 
 .date-input-pair {
