@@ -1462,6 +1462,7 @@ function renderCollectionField(node, param, item, index, field) {
     <div class="field compact">
       <label for="${escapeHtml(fieldId)}">${escapeHtml(field.label || field.name)}</label>
       ${control}
+      ${field.help ? `<div class="hint">${escapeHtml(field.help)}</div>` : ""}
     </div>
   `;
 }
@@ -1661,7 +1662,9 @@ function bindPaletteDrag() {
     element.addEventListener("dragstart", (event) => {
       setDragActive(true);
       updateDragPointer(event);
+      event.dataTransfer.effectAllowed = "copy";
       event.dataTransfer.setData("application/martin-widget", element.dataset.widget);
+      event.dataTransfer.setData("text/plain", element.dataset.widget || "");
     });
     element.addEventListener("dragend", () => {
       setDragActive(false);
@@ -1703,18 +1706,29 @@ function bindDropzones() {
 function bindNodeActions() {
   document.querySelectorAll(".node-card").forEach((card) => {
     if (card.getAttribute("draggable") === "true") {
+      card.style.cursor = "grab";
       card.addEventListener("dragstart", (event) => {
         setDragActive(true);
         updateDragPointer(event);
         event.stopPropagation();
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
+        event.dataTransfer.setData("text/plain", card.dataset.nodeId || "");
         card.classList.add("is-dragging");
       });
       card.addEventListener("dragend", () => {
         setDragActive(false);
         card.classList.remove("is-dragging");
         document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
+      });
+      card.addEventListener("mousedown", () => {
+        card.style.cursor = "grabbing";
+      });
+      card.addEventListener("mouseup", () => {
+        card.style.cursor = "grab";
+      });
+      card.addEventListener("mouseleave", () => {
+        card.style.cursor = "grab";
       });
     }
     card.addEventListener("click", (event) => {
