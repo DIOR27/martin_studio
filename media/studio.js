@@ -104,6 +104,49 @@ const COMPACT_ROW_WIDGETS = new Set([
   "SideMenu",
 ]);
 
+const ICON_VALUE_PRESETS = [
+  { value: "↑", label: "Arrow Up" },
+  { value: "✆", label: "Phone" },
+  { value: "🚀", label: "Rocket" },
+  { value: "✨", label: "Sparkles" },
+  { value: "⭐", label: "Star" },
+  { value: "✅", label: "Check" },
+  { value: "⚠️", label: "Warning" },
+  { value: "❌", label: "Error" },
+  { value: "ℹ️", label: "Info" },
+  { value: "🔍", label: "Search" },
+  { value: "📅", label: "Calendar" },
+  { value: "💬", label: "Chat" },
+];
+
+const ICON_PROVIDER_PRESETS = {
+  fontawesome: [
+    "house", "user", "gear", "bell", "star", "heart", "arrow-up", "arrow-right", "check", "xmark", "bars", "whatsapp",
+  ],
+  "bootstrap-icons": [
+    "house", "person", "gear", "bell", "star", "heart", "arrow-up", "arrow-right", "check", "x-lg", "list", "calendar-event",
+  ],
+  "material-symbols": [
+    "home", "person", "settings", "notifications", "star", "favorite", "arrow_upward", "arrow_forward", "check", "close", "menu", "calendar_month",
+  ],
+  "material-icons": [
+    "home", "person", "settings", "notifications", "star", "favorite", "arrow_upward", "arrow_forward", "check", "close", "menu", "calendar_today",
+  ],
+  mdi: [
+    "home", "account", "cog", "bell", "star", "heart", "arrow-up", "arrow-right", "check", "close", "menu", "calendar-month",
+  ],
+};
+
+const ICON_PROVIDER_LABELS = {
+  none: "Plain",
+  fontawesome: "Font Awesome",
+  "bootstrap-icons": "Bootstrap Icons",
+  "material-symbols": "Material Symbols",
+  "material-icons": "Material Icons",
+  mdi: "MDI",
+  custom: "Custom",
+};
+
 function uid(prefix = "node") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -435,6 +478,296 @@ function renderNumberEditor({
   `;
 }
 
+function getIconProviderValue(node, widget) {
+  const raw = getNodeParamValue(node, widget, "provider");
+  if (raw === null || raw === undefined || raw === "") {
+    return "none";
+  }
+  return String(raw);
+}
+
+function parseIconWidgetState(value) {
+  if (value && typeof value === "object" && !Array.isArray(value) && value.__martin_expr__ === "IconWidget") {
+    const provider = value.provider ? String(value.provider) : "none";
+    return {
+      mode: provider === "none" ? "plain" : provider,
+      plainValue: value.icon || "",
+      providerValue: provider,
+      nameValue: value.name || "",
+      customProvider: provider && !Object.prototype.hasOwnProperty.call(ICON_PROVIDER_LABELS, provider) ? provider : "",
+      size: value.size,
+      variant: value.variant || "",
+    };
+  }
+  return {
+    mode: "plain",
+    plainValue: value === null || value === undefined ? "" : String(value),
+    providerValue: "none",
+    nameValue: "",
+    customProvider: "",
+    size: "",
+    variant: "",
+  };
+}
+
+function getIconWidgetDraftKey(nodeId, propName) {
+  return buildDraftKey({ scope: "icon-widget", nodeId, propName });
+}
+
+function renderIconValueEditor(node, fieldId, propName, value) {
+  const currentValue = value === null || value === undefined ? "" : String(value);
+  return `
+    <div class="icon-value-editor">
+      <div class="icon-chip-grid">
+        ${ICON_VALUE_PRESETS.map((preset) => `
+          <button
+            type="button"
+            class="icon-chip ${currentValue === preset.value ? "is-active" : ""}"
+            data-editor-action="pick-icon-value"
+            data-node-id="${escapeHtml(node.id)}"
+            data-prop="${escapeHtml(propName)}"
+            data-icon-value="${escapeHtml(preset.value)}"
+            title="${escapeHtml(preset.label)}"
+          >
+            <span class="icon-chip-glyph">${escapeHtml(preset.value)}</span>
+          </button>
+        `).join("")}
+      </div>
+      <input
+        type="text"
+        id="${escapeHtml(fieldId)}"
+        value="${escapeHtml(currentValue)}"
+        placeholder="Custom icon or emoji"
+        data-node-id="${escapeHtml(node.id)}"
+        data-prop="${escapeHtml(propName)}"
+        data-field-type="string"
+      >
+    </div>
+  `;
+}
+
+function renderIconProviderEditor(node, fieldId, propName, value, param) {
+  const options = Array.isArray(param.editor?.options) ? param.editor.options : [];
+  const currentValue = value === null || value === undefined || value === "" ? "none" : String(value);
+  const selectValue = options.includes(currentValue) ? currentValue : "custom";
+  const customValue = selectValue === "custom" ? currentValue : "";
+  return `
+    <div class="icon-provider-editor">
+      <select
+        id="${escapeHtml(fieldId)}"
+        data-editor-kind="icon-provider-select"
+        data-node-id="${escapeHtml(node.id)}"
+        data-prop="${escapeHtml(propName)}"
+      >
+        ${options.map((option) => `
+          <option value="${escapeHtml(option)}" ${selectValue === option ? "selected" : ""}>${escapeHtml(ICON_PROVIDER_LABELS[option] || option)}</option>
+        `).join("")}
+      </select>
+      ${selectValue === "custom" ? `
+        <input
+          type="text"
+          value="${escapeHtml(customValue)}"
+          placeholder="boxicons, remixicon..."
+          data-editor-kind="icon-provider-custom"
+          data-node-id="${escapeHtml(node.id)}"
+          data-prop="${escapeHtml(propName)}"
+        >
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderIconWidgetEditor(node, fieldId, propName, value) {
+  const draftValue = readInspectorDraft(getIconWidgetDraftKey(node.id, propName), value);
+  const state = parseIconWidgetState(draftValue);
+  const provider = state.mode;
+  const presets = ICON_PROVIDER_PRESETS[provider] || [];
+  return `
+    <div
+      class="icon-widget-editor"
+      data-editor-kind="icon-widget-root"
+      data-node-id="${escapeHtml(node.id)}"
+      data-prop="${escapeHtml(propName)}"
+    >
+      <select data-editor-kind="icon-widget-mode" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+        <option value="plain" ${provider === "plain" ? "selected" : ""}>Plain</option>
+        <option value="fontawesome" ${provider === "fontawesome" ? "selected" : ""}>Font Awesome</option>
+        <option value="bootstrap-icons" ${provider === "bootstrap-icons" ? "selected" : ""}>Bootstrap Icons</option>
+        <option value="material-symbols" ${provider === "material-symbols" ? "selected" : ""}>Material Symbols</option>
+        <option value="material-icons" ${provider === "material-icons" ? "selected" : ""}>Material Icons</option>
+        <option value="mdi" ${provider === "mdi" ? "selected" : ""}>MDI</option>
+        <option value="custom-provider" ${provider !== "plain" && provider !== "fontawesome" && provider !== "bootstrap-icons" && provider !== "material-symbols" && provider !== "material-icons" && provider !== "mdi" ? "selected" : ""}>Custom provider</option>
+      </select>
+      ${provider === "plain" ? `
+        ${renderIconValueEditor(node, fieldId, propName, state.plainValue)}
+      ` : `
+        ${provider === "custom-provider" ? `
+          <input
+            type="text"
+            value="${escapeHtml(state.customProvider)}"
+            placeholder="Provider"
+            data-editor-kind="icon-widget-provider-custom"
+            data-node-id="${escapeHtml(node.id)}"
+            data-prop="${escapeHtml(propName)}"
+          >
+        ` : ""}
+        ${presets.length ? `
+          <div class="icon-chip-grid icon-chip-grid-names">
+            ${presets.map((preset) => `
+              <button
+                type="button"
+                class="icon-chip icon-chip-name ${state.nameValue === preset ? "is-active" : ""}"
+                data-editor-action="pick-icon-widget-name"
+                data-node-id="${escapeHtml(node.id)}"
+                data-prop="${escapeHtml(propName)}"
+                data-icon-name="${escapeHtml(preset)}"
+                title="${escapeHtml(preset)}"
+              >
+                <span class="icon-chip-label">${escapeHtml(preset)}</span>
+              </button>
+            `).join("")}
+          </div>
+        ` : ""}
+        <input
+          type="text"
+          value="${escapeHtml(state.nameValue)}"
+          placeholder="Icon name"
+          data-editor-kind="icon-widget-name"
+          data-node-id="${escapeHtml(node.id)}"
+          data-prop="${escapeHtml(propName)}"
+        >
+      `}
+    </div>
+  `;
+}
+
+function renderIconNameEditor(node, widget, fieldId, propName, value) {
+  const currentValue = value === null || value === undefined ? "" : String(value);
+  const provider = getIconProviderValue(node, widget);
+  const presets = ICON_PROVIDER_PRESETS[provider] || [];
+  return `
+    <div class="icon-name-editor">
+      ${presets.length ? `
+        <div class="icon-chip-grid icon-chip-grid-names">
+          ${presets.map((preset) => `
+            <button
+              type="button"
+              class="icon-chip icon-chip-name ${currentValue === preset ? "is-active" : ""}"
+              data-editor-action="pick-icon-name"
+              data-node-id="${escapeHtml(node.id)}"
+              data-prop="${escapeHtml(propName)}"
+              data-icon-name="${escapeHtml(preset)}"
+              title="${escapeHtml(preset)}"
+            >
+              <span class="icon-chip-label">${escapeHtml(preset)}</span>
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+      <input
+        type="text"
+        id="${escapeHtml(fieldId)}"
+        value="${escapeHtml(currentValue)}"
+        placeholder="${escapeHtml(provider === "none" ? "star, rocket, emoji..." : "Icon name")}"
+        data-node-id="${escapeHtml(node.id)}"
+        data-prop="${escapeHtml(propName)}"
+        data-field-type="string"
+      >
+    </div>
+  `;
+}
+
+function parseConditionState(value) {
+  if (typeof value === "boolean") {
+    return { mode: "static", staticValue: value, fieldId: "", source: "auto", operator: "==", compareValue: "" };
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value.__martin_expr__ === "ConditionDraft") {
+      return {
+        mode: value.mode || "static",
+        staticValue: value.staticValue !== false,
+        fieldId: value.fieldId || "",
+        source: value.source || "auto",
+        operator: value.operator || "==",
+        compareValue: value.compareValue === null || value.compareValue === undefined ? "" : String(value.compareValue),
+      };
+    }
+    if (value.__martin_expr__ === "Field") {
+      return {
+        mode: "field",
+        staticValue: true,
+        fieldId: value.input_id || "",
+        source: value.source || "auto",
+        operator: "truthy",
+        compareValue: "",
+      };
+    }
+    if (value.__martin_expr__ === "Condition" && value.left && value.left.__martin_expr__ === "Field") {
+      return {
+        mode: "field",
+        staticValue: true,
+        fieldId: value.left.input_id || "",
+        source: value.left.source || "auto",
+        operator: value.operator || "==",
+        compareValue: value.right === null || value.right === undefined ? "" : String(value.right),
+      };
+    }
+  }
+  return { mode: "static", staticValue: true, fieldId: "", source: "auto", operator: "==", compareValue: "" };
+}
+
+function renderConditionEditor(node, fieldId, propName, value) {
+  const stateValue = parseConditionState(value);
+  const enabled = value !== null && value !== undefined;
+  const compareVisible = !["truthy", "falsy"].includes(stateValue.operator);
+  return `
+    <div class="condition-editor" data-editor-kind="condition-root" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+      <label class="inspector-check inspector-check-inline condition-toggle ${enabled ? "is-on" : ""}">
+        <input type="checkbox" data-editor-kind="condition-enabled" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}" ${enabled ? "checked" : ""}>
+        <span class="inspector-check-box" aria-hidden="true"></span>
+        <span class="inspector-check-copy">
+          <strong>Enable ${escapeHtml(propName)}</strong>
+          <small>Show editor for this rule.</small>
+        </span>
+      </label>
+      ${enabled ? `
+        <div class="condition-editor-body">
+          <select id="${escapeHtml(fieldId)}" data-editor-kind="condition-mode" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+            <option value="static" ${stateValue.mode === "static" ? "selected" : ""}>Static value</option>
+            <option value="field" ${stateValue.mode === "field" ? "selected" : ""}>Depends on another widget</option>
+          </select>
+          ${stateValue.mode === "static" ? `
+            <select data-editor-kind="condition-static-select" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+              <option value="true" ${stateValue.staticValue ? "selected" : ""}>True</option>
+              <option value="false" ${!stateValue.staticValue ? "selected" : ""}>False</option>
+            </select>
+          ` : `
+            <input type="text" value="${escapeHtml(stateValue.fieldId)}" placeholder="Widget id" data-editor-kind="condition-field-id" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+            <select data-editor-kind="condition-source" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+              <option value="auto" ${stateValue.source === "auto" ? "selected" : ""}>Auto</option>
+              <option value="value" ${stateValue.source === "value" ? "selected" : ""}>Value</option>
+              <option value="checked" ${stateValue.source === "checked" ? "selected" : ""}>Checked</option>
+              <option value="text" ${stateValue.source === "text" ? "selected" : ""}>Text</option>
+            </select>
+            <select data-editor-kind="condition-operator" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">
+              <option value="truthy" ${stateValue.operator === "truthy" ? "selected" : ""}>Has value</option>
+              <option value="falsy" ${stateValue.operator === "falsy" ? "selected" : ""}>No value</option>
+              <option value="==" ${stateValue.operator === "==" ? "selected" : ""}>Equals</option>
+              <option value="!=" ${stateValue.operator === "!=" ? "selected" : ""}>Not equal</option>
+              <option value=">" ${stateValue.operator === ">" ? "selected" : ""}>Greater than</option>
+              <option value=">=" ${stateValue.operator === ">=" ? "selected" : ""}>Greater or equal</option>
+              <option value="<" ${stateValue.operator === "<" ? "selected" : ""}>Less than</option>
+              <option value="<=" ${stateValue.operator === "<=" ? "selected" : ""}>Less or equal</option>
+              <option value="contains" ${stateValue.operator === "contains" ? "selected" : ""}>Contains</option>
+            </select>
+            ${compareVisible ? `<input type="text" value="${escapeHtml(stateValue.compareValue)}" placeholder="Compare with" data-editor-kind="condition-value" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}">` : ""}
+          `}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
 function getNodeParamValue(node, widget, paramName) {
   if (node?.props && Object.prototype.hasOwnProperty.call(node.props, paramName)) {
     return node.props[paramName];
@@ -605,6 +938,43 @@ function renderField(node, widget, param) {
     `;
   }
 
+  if (param.editor && param.editor.type === "icon_widget") {
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderIconWidgetEditor(node, fieldId, param.name, draftCurrent)}
+      </div>
+    `;
+  }
+
+  if (param.editor && param.editor.type === "icon_value") {
+    const value = draftCurrent === null || draftCurrent === undefined ? "" : String(draftCurrent);
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderIconValueEditor(node, fieldId, param.name, value)}
+      </div>
+    `;
+  }
+
+  if (node.type === "Icon" && param.name === "provider" && param.editor && param.editor.type === "icon_provider") {
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderIconProviderEditor(node, fieldId, param.name, draftCurrent, param)}
+      </div>
+    `;
+  }
+
+  if (node.type === "Icon" && param.name === "name" && param.editor && param.editor.type === "icon_name") {
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderIconNameEditor(node, widget, fieldId, param.name, draftCurrent)}
+      </div>
+    `;
+  }
+
   if (param.editor && param.editor.type === "collection") {
     const items = Array.isArray(current) ? current : [];
     return `
@@ -649,11 +1019,30 @@ function renderField(node, widget, param) {
     `;
   }
 
+  if (param.editor && param.editor.type === "condition") {
+    const hasExplicitValue = node.props && Object.prototype.hasOwnProperty.call(node.props, param.name);
+    const actualValue = hasExplicitValue ? node.props[param.name] : null;
+    const draftCondition = readInspectorDraft(draftKey, actualValue);
+    return `
+      <div class="field">
+        <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
+        ${renderConditionEditor(node, fieldId, param.name, draftCondition)}
+      </div>
+    `;
+  }
+
   if (param.type === "boolean") {
     return `
       <div class="field">
         <label for="${escapeHtml(fieldId)}">${escapeHtml(param.name)}</label>
-        <input type="checkbox" id="${escapeHtml(fieldId)}" ${common} data-field-type="boolean" ${draftCurrent ? "checked" : ""}>
+        <label class="inspector-check inspector-check-inline ${draftCurrent ? "is-on" : ""}" for="${escapeHtml(fieldId)}">
+          <input type="checkbox" id="${escapeHtml(fieldId)}" ${common} data-field-type="boolean" ${draftCurrent ? "checked" : ""}>
+          <span class="inspector-check-box" aria-hidden="true"></span>
+          <span class="inspector-check-copy">
+            <strong>${draftCurrent ? "Enabled" : "Disabled"}</strong>
+            <small>${escapeHtml(param.name)} ${draftCurrent ? "is active" : "is inactive"}</small>
+          </span>
+        </label>
       </div>
     `;
   }
@@ -1101,6 +1490,88 @@ function bindNodeActions() {
   });
 }
 
+function normalizeConditionValue(rawValue) {
+  const text = String(rawValue ?? "").trim();
+  if (text === "") return "";
+  if (/^(true|false)$/i.test(text)) return text.toLowerCase() === "true";
+  if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
+  return text;
+}
+
+function readConditionDraft(root) {
+  if (!root) {
+    return null;
+  }
+  const enabled = !!root.querySelector('[data-editor-kind="condition-enabled"]')?.checked;
+  if (!enabled) {
+    return null;
+  }
+  const mode = root.querySelector('[data-editor-kind="condition-mode"]')?.value || "static";
+  if (mode === "static") {
+    return {
+      __martin_expr__: "ConditionDraft",
+      mode: "static",
+      staticValue: root.querySelector('[data-editor-kind="condition-static-select"]')?.value !== "false",
+      fieldId: "",
+      source: "auto",
+      operator: "==",
+      compareValue: "",
+    };
+  }
+  return {
+    __martin_expr__: "ConditionDraft",
+    mode: "field",
+    staticValue: true,
+    fieldId: root.querySelector('[data-editor-kind="condition-field-id"]')?.value?.trim() || "",
+    source: root.querySelector('[data-editor-kind="condition-source"]')?.value || "auto",
+    operator: root.querySelector('[data-editor-kind="condition-operator"]')?.value || "truthy",
+    compareValue: normalizeConditionValue(root.querySelector('[data-editor-kind="condition-value"]')?.value ?? ""),
+  };
+}
+
+function buildConditionPayload(root) {
+  const draft = readConditionDraft(root);
+  if (!draft) {
+    return null;
+  }
+  if (draft.mode === "static") {
+    return draft.staticValue !== false;
+  }
+  if (!draft.fieldId) {
+    return draft;
+  }
+  const fieldExpr = { __martin_expr__: "Field", input_id: draft.fieldId, source: draft.source || "auto" };
+  if (draft.operator === "truthy") {
+    return fieldExpr;
+  }
+  if (draft.operator === "falsy") {
+    return { __martin_expr__: "ConditionNot", expr: fieldExpr };
+  }
+  return {
+    __martin_expr__: "Condition",
+    operator: draft.operator || "==",
+    left: fieldExpr,
+    right: draft.compareValue,
+  };
+}
+
+function updateConditionField(nodeId, propName) {
+  const root = document.querySelector(`[data-editor-kind="condition-root"][data-node-id="${cssEscape(nodeId)}"][data-prop="${cssEscape(propName)}"]`);
+  const draftKey = getFieldDraftKey(nodeId, propName);
+  const draftValue = readConditionDraft(root);
+  if (draftValue) {
+    setInspectorDraft(draftKey, draftValue);
+  } else {
+    clearInspectorDraft(draftKey);
+  }
+  const payload = buildConditionPayload(root);
+  if (payload && payload.__martin_expr__ === "ConditionDraft") {
+    render();
+    return;
+  }
+  updateProp(nodeId, propName, payload);
+}
+
 function bindInspector() {
   document.querySelectorAll("[data-prop]").forEach((field) => {
     if (field.dataset.editorAction || field.dataset.editorKind) {
@@ -1161,6 +1632,67 @@ function bindInspector() {
       button.dataset.stepDirection,
     ));
   });
+  document.querySelectorAll('[data-editor-action="pick-icon-value"]').forEach((button) => {
+    button.addEventListener("click", () => updateProp(
+      button.dataset.nodeId,
+      button.dataset.prop,
+      button.dataset.iconValue,
+    ));
+  });
+  document.querySelectorAll('[data-editor-action="pick-icon-widget-name"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      const root = document.querySelector(`[data-editor-kind="icon-widget-root"][data-node-id="${cssEscape(button.dataset.nodeId)}"][data-prop="${cssEscape(button.dataset.prop)}"]`);
+      const nameField = root?.querySelector('[data-editor-kind="icon-widget-name"]');
+      if (nameField) {
+        nameField.value = button.dataset.iconName || "";
+      }
+      updateIconWidgetField(
+        button.dataset.nodeId,
+        button.dataset.prop,
+      );
+    });
+  });
+  document.querySelectorAll('[data-editor-action="pick-icon-name"]').forEach((button) => {
+    button.addEventListener("click", () => updateProp(
+      button.dataset.nodeId,
+      button.dataset.prop,
+      button.dataset.iconName,
+    ));
+  });
+  document.querySelectorAll('[data-editor-kind="icon-widget-mode"]').forEach((field) => {
+    field.addEventListener("change", () => changeIconWidgetMode(
+      field.dataset.nodeId,
+      field.dataset.prop,
+      field.value,
+    ));
+  });
+  document.querySelectorAll('[data-editor-kind="icon-widget-provider-custom"]').forEach((field) => {
+    field.addEventListener("input", () => syncIconWidgetDraft(field.dataset.nodeId, field.dataset.prop));
+    field.addEventListener("blur", () => updateIconWidgetField(field.dataset.nodeId, field.dataset.prop));
+  });
+  document.querySelectorAll('[data-editor-kind="icon-widget-name"]').forEach((field) => {
+    field.addEventListener("input", () => syncIconWidgetDraft(field.dataset.nodeId, field.dataset.prop));
+    field.addEventListener("blur", () => updateIconWidgetField(field.dataset.nodeId, field.dataset.prop));
+  });
+  document.querySelectorAll('[data-editor-kind="icon-provider-select"]').forEach((field) => {
+    field.addEventListener("change", () => updateIconProviderField(
+      field.dataset.nodeId,
+      field.dataset.prop,
+      "select",
+      field.value,
+    ));
+  });
+  document.querySelectorAll('[data-editor-kind="icon-provider-custom"]').forEach((field) => {
+    field.addEventListener("input", () => {
+      setInspectorDraft(getFieldDraftKey(field.dataset.nodeId, field.dataset.prop), field.value.trim() || "custom");
+    });
+    field.addEventListener("blur", () => updateIconProviderField(
+      field.dataset.nodeId,
+      field.dataset.prop,
+      "custom",
+      field.value,
+    ));
+  });
   document.querySelectorAll('[data-editor-kind="code-language-select"]').forEach((field) => {
     field.addEventListener("change", () => updateCodeLanguageField(
       field.dataset.nodeId,
@@ -1179,6 +1711,18 @@ function bindInspector() {
       "custom",
       field.value,
     ));
+  });
+  document.querySelectorAll('[data-editor-kind="condition-enabled"]').forEach((field) => {
+    field.addEventListener("change", () => updateConditionField(field.dataset.nodeId, field.dataset.prop));
+  });
+  document.querySelectorAll('[data-editor-kind="condition-mode"]').forEach((field) => {
+    field.addEventListener("change", () => updateConditionField(field.dataset.nodeId, field.dataset.prop));
+  });
+  document.querySelectorAll('[data-editor-kind="condition-static-select"], [data-editor-kind="condition-source"], [data-editor-kind="condition-operator"]').forEach((field) => {
+    field.addEventListener("change", () => updateConditionField(field.dataset.nodeId, field.dataset.prop));
+  });
+  document.querySelectorAll('[data-editor-kind="condition-field-id"], [data-editor-kind="condition-value"]').forEach((field) => {
+    field.addEventListener("blur", () => updateConditionField(field.dataset.nodeId, field.dataset.prop));
   });
   document.querySelectorAll('[data-editor-kind="collection-field"]').forEach((field) => {
     const tagName = field.tagName.toLowerCase();
@@ -1437,6 +1981,7 @@ function updateProp(nodeId, propName, value) {
   if (!node) return;
   node.props = node.props || {};
   clearInspectorDraft(getFieldDraftKey(nodeId, propName));
+  clearInspectorDraft(getIconWidgetDraftKey(nodeId, propName));
   if (value === "" || value === null || value === undefined) delete node.props[propName];
   else node.props[propName] = value;
   render();
@@ -1617,6 +2162,73 @@ function updateCodeLanguageField(nodeId, propName, source, rawValue) {
     : (String(rawValue || "").trim() || "custom");
   setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue);
   updateProp(nodeId, propName, nextValue);
+}
+
+function updateIconProviderField(nodeId, propName, source, rawValue) {
+  const nextValue = source === "select"
+    ? (rawValue === "none" ? null : (rawValue === "custom" ? "custom" : rawValue))
+    : (String(rawValue || "").trim() || "custom");
+  setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue ?? "");
+  updateProp(nodeId, propName, nextValue);
+}
+
+function syncIconWidgetDraft(nodeId, propName) {
+  const nextValue = readIconWidgetEditorValue(nodeId, propName);
+  setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue);
+  setInspectorDraft(getIconWidgetDraftKey(nodeId, propName), nextValue);
+}
+
+function updateIconWidgetField(nodeId, propName) {
+  const nextValue = readIconWidgetEditorValue(nodeId, propName);
+  setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue);
+  setInspectorDraft(getIconWidgetDraftKey(nodeId, propName), nextValue);
+  updateProp(nodeId, propName, nextValue);
+}
+
+function changeIconWidgetMode(nodeId, propName, mode) {
+  const existing = parseIconWidgetState(readInspectorDraft(getIconWidgetDraftKey(nodeId, propName), findNodeById(state.design.root, nodeId)?.props?.[propName]));
+  let nextValue = "";
+  if (mode === "plain") {
+    nextValue = existing.plainValue || "";
+  } else if (mode === "custom-provider") {
+    nextValue = {
+      __martin_expr__: "IconWidget",
+      provider: existing.customProvider || "",
+      name: existing.nameValue || "",
+    };
+  } else {
+    nextValue = {
+      __martin_expr__: "IconWidget",
+      provider: mode,
+      name: existing.nameValue || "",
+    };
+  }
+  setInspectorDraft(getFieldDraftKey(nodeId, propName), nextValue);
+  setInspectorDraft(getIconWidgetDraftKey(nodeId, propName), nextValue);
+  render();
+}
+
+function readIconWidgetEditorValue(nodeId, propName) {
+  const root = document.querySelector(`[data-editor-kind="icon-widget-root"][data-node-id="${cssEscape(nodeId)}"][data-prop="${cssEscape(propName)}"]`);
+  if (!root) {
+    return "";
+  }
+  const mode = root.querySelector('[data-editor-kind="icon-widget-mode"]')?.value || "plain";
+  if (mode === "plain") {
+    return root.querySelector('input[data-field-type="string"]')?.value || "";
+  }
+  const provider = mode === "custom-provider"
+    ? (root.querySelector('[data-editor-kind="icon-widget-provider-custom"]')?.value || "").trim()
+    : mode;
+  const name = (root.querySelector('[data-editor-kind="icon-widget-name"]')?.value || "").trim();
+  if (!provider || !name) {
+    return "";
+  }
+  return {
+    __martin_expr__: "IconWidget",
+    name,
+    provider,
+  };
 }
 
 function removeCollectionItem(nodeId, propName, index) {
@@ -2160,7 +2772,33 @@ def mount_backend(app):
 
 function collectImports(node, imports) {
   imports.add(node.type);
+  collectPropImports(node.props || {}, imports);
   for (const child of node.children || []) collectImports(child, imports);
+}
+
+function collectPropImports(value, imports) {
+  if (!value) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectPropImports(item, imports));
+    return;
+  }
+  if (typeof value !== "object") {
+    return;
+  }
+  if (value.__martin_expr__ === "IconWidget") {
+    imports.add("Icon");
+    return;
+  }
+  if (value.__martin_expr__ === "Field" || value.__martin_expr__ === "Condition" || value.__martin_expr__ === "ConditionGroup" || value.__martin_expr__ === "ConditionNot") {
+    imports.add("Field");
+    return;
+  }
+  if (value.__martin_expr__ === "Ref") {
+    return;
+  }
+  Object.values(value).forEach((item) => collectPropImports(item, imports));
 }
 
 function getRequiredImports(design) {
@@ -2277,6 +2915,44 @@ function pyMartinExpr(value, depth) {
       args.push("label=True");
     }
     return `Ref(${args.join(", ")})`;
+  }
+  if (exprType === "Field") {
+    const args = [pyValue(value.input_id, depth + 1)];
+    if (value.source && value.source !== "auto") {
+      args.push(`source=${pyValue(value.source, depth + 1)}`);
+    }
+    return `Field(${args.join(", ")})`;
+  }
+  if (exprType === "Condition") {
+    const left = pyValue(value.left, depth + 1);
+    const right = pyValue(value.right, depth + 1);
+    const operator = String(value.operator || "==");
+    if (operator === "contains") return `${left}.contains(${right})`;
+    if (operator === "starts_with") return `${left}.startswith(${right})`;
+    if (operator === "ends_with") return `${left}.endswith(${right})`;
+    return `(${left} ${operator} ${right})`;
+  }
+  if (exprType === "ConditionGroup") {
+    const items = Array.isArray(value.items) ? value.items : [];
+    const separator = (value.operator || "and") === "or" ? " | " : " & ";
+    return `(${items.map((item) => pyValue(item, depth + 1)).join(separator)})`;
+  }
+  if (exprType === "ConditionNot") {
+    return `~(${pyValue(value.expr, depth + 1)})`;
+  }
+  if (exprType === "IconWidget") {
+    const parts = [];
+    if (value.icon !== undefined && value.icon !== null && value.icon !== "") parts.push(`icon=${pyValue(value.icon, depth + 1)}`);
+    if (value.name) parts.push(`name=${pyValue(value.name, depth + 1)}`);
+    if (value.provider) parts.push(`provider=${pyValue(value.provider, depth + 1)}`);
+    if (value.variant) parts.push(`variant=${pyValue(value.variant, depth + 1)}`);
+    if (value.icon_class) parts.push(`icon_class=${pyValue(value.icon_class, depth + 1)}`);
+    if (value.class_name) parts.push(`class_name=${pyValue(value.class_name, depth + 1)}`);
+    if (value.base_class) parts.push(`base_class=${pyValue(value.base_class, depth + 1)}`);
+    if (value.name_prefix) parts.push(`name_prefix=${pyValue(value.name_prefix, depth + 1)}`);
+    if (value.name_suffix) parts.push(`name_suffix=${pyValue(value.name_suffix, depth + 1)}`);
+    if (value.size !== undefined && value.size !== null && value.size !== "") parts.push(`size=${pyValue(value.size, depth + 1)}`);
+    return `Icon(${parts.join(", ")})`;
   }
   if (exprType === "ApiCall") {
     const parts = [];

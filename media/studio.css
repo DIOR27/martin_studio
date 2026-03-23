@@ -678,6 +678,216 @@ body {
   gap: 8px;
 }
 
+.icon-value-editor,
+.icon-provider-editor,
+.icon-name-editor,
+.icon-widget-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.condition-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.condition-editor-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inspector-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.inspector-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  opacity: 0;
+  grid-column: 1;
+  grid-row: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.inspector-check-box {
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    rgba(9, 13, 19, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  position: relative;
+}
+
+.inspector-check-box::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #7c9cff, #5d8bff);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.inspector-check-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inspector-check-copy strong {
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.inspector-check-copy small {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.inspector-check-card {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.inspector-check-card:hover {
+  border-color: rgba(124, 156, 255, 0.34);
+  background: rgba(124, 156, 255, 0.06);
+}
+
+.inspector-check-card.is-on {
+  border-color: rgba(124, 156, 255, 0.45);
+  background: rgba(124, 156, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(124, 156, 255, 0.14);
+}
+
+.inspector-check-inline {
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.inspector-check-inline:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+.inspector-check-inline.is-on {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.inspector-check input[type="checkbox"]:focus-visible + .inspector-check-box {
+  border-color: rgba(124, 156, 255, 0.75);
+  box-shadow: 0 0 0 3px rgba(124, 156, 255, 0.18);
+}
+
+.inspector-check input[type="checkbox"]:checked + .inspector-check-box {
+  border-color: rgba(124, 156, 255, 0.7);
+  background:
+    linear-gradient(180deg, rgba(124, 156, 255, 0.28), rgba(93, 139, 255, 0.12)),
+    rgba(16, 22, 33, 0.98);
+}
+
+.inspector-check input[type="checkbox"]:checked + .inspector-check-box::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.condition-toggle {
+  width: 100%;
+}
+
+.condition-toggle .inspector-check-copy strong {
+  font-size: 12px;
+}
+
+.condition-toggle .inspector-check-copy small {
+  font-size: 11px;
+}
+
+.icon-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  gap: 8px;
+}
+
+.icon-chip-grid-names {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+
+.icon-chip {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  min-height: 40px;
+  padding: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.icon-chip:hover {
+  border-color: rgba(47, 129, 247, 0.45);
+  background: rgba(47, 129, 247, 0.1);
+}
+
+.icon-chip.is-active {
+  border-color: rgba(245, 158, 11, 0.65);
+  background: rgba(245, 158, 11, 0.14);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.icon-chip:active {
+  transform: translateY(1px);
+}
+
+.icon-chip-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.icon-chip-label {
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-word;
+}
+
 .field textarea {
   min-height: 82px;
 }
