@@ -42,6 +42,10 @@ const state = {
   inspectorDrafts: {},
 };
 
+const STUDIO_STORAGE_KEYS = {
+  collapsedPanels: "martin-studio.collapsed-panels",
+};
+
 const WIDGET_ICONS = {
   Alert: "!",
   Badge: "●",
@@ -190,7 +194,36 @@ function readInspectorDraft(key, fallback) {
     : fallback;
 }
 
+function loadPersistedUiState() {
+  try {
+    const rawCollapsed = window.localStorage.getItem(STUDIO_STORAGE_KEYS.collapsedPanels);
+    if (!rawCollapsed) {
+      return;
+    }
+    const parsed = JSON.parse(rawCollapsed);
+    if (!parsed || typeof parsed !== "object") {
+      return;
+    }
+    for (const panel of Object.keys(state.collapsed)) {
+      if (typeof parsed[panel] === "boolean") {
+        state.collapsed[panel] = parsed[panel];
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to load MARTIN Studio UI state", error);
+  }
+}
+
+function persistCollapsedPanels() {
+  try {
+    window.localStorage.setItem(STUDIO_STORAGE_KEYS.collapsedPanels, JSON.stringify(state.collapsed));
+  } catch (error) {
+    console.warn("Failed to persist MARTIN Studio UI state", error);
+  }
+}
+
 function init() {
+  loadPersistedUiState();
   window.addEventListener("message", onMessage);
   bindDragWheelScroll();
   vscode.postMessage({ type: "ready" });
@@ -270,8 +303,8 @@ function render() {
         </div>
         <div class="topbar-actions">
           ${state.sourceContext ? `<button class="btn" data-action="open-page-source">Open page file</button>` : ""}
-          ${state.projectContext && state.projectContext.livePreviewUrl ? `<button class="btn icon-topbar-btn" data-action="open-browser-preview" title="Open preview in browser tab" aria-label="Open preview in browser tab">🌐</button>` : ""}
           ${state.projectContext && state.projectContext.livePreviewUrl ? `<button class="btn icon-topbar-btn play-btn" data-action="toggle-preview-server" title="${state.projectContext.livePreviewOnline ? "Stop martin run" : "Run martin run"}" aria-label="${state.projectContext.livePreviewOnline ? "Stop martin run" : "Run martin run"}">${state.projectContext.livePreviewOnline ? "■" : "▶"}</button>` : ""}
+          ${state.projectContext && state.projectContext.livePreviewUrl ? `<button class="btn icon-topbar-btn" data-action="open-browser-preview" title="Open preview in browser tab" aria-label="Open preview in browser tab">🌐</button>` : ""}
           <button class="btn icon-topbar-btn" data-action="reload-catalog" title="Reload catalog" aria-label="Reload catalog">↻</button>
           <button class="btn" data-action="open-source">Open design JSON</button>
           <button class="btn icon-topbar-btn" data-action="save-design" title="${state.sourceContext ? "Save to source" : "Save"}" aria-label="${state.sourceContext ? "Save to source" : "Save"}">💾</button>
@@ -726,7 +759,9 @@ function renderConditionEditor(node, fieldId, propName, value) {
         <input type="checkbox" data-editor-kind="condition-enabled" data-node-id="${escapeHtml(node.id)}" data-prop="${escapeHtml(propName)}" ${enabled ? "checked" : ""}>
         <span class="inspector-check-box" aria-hidden="true"></span>
         <span class="inspector-check-copy">
-          <strong>Enable ${escapeHtml(propName)}</strong>
+          <span class="inspector-check-title-row">
+            <strong>Enable ${escapeHtml(propName)}</strong>
+          </span>
           <small>Show editor for this rule.</small>
         </span>
       </label>
@@ -1039,7 +1074,9 @@ function renderField(node, widget, param) {
           <input type="checkbox" id="${escapeHtml(fieldId)}" ${common} data-field-type="boolean" ${draftCurrent ? "checked" : ""}>
           <span class="inspector-check-box" aria-hidden="true"></span>
           <span class="inspector-check-copy">
-            <strong>${draftCurrent ? "Enabled" : "Disabled"}</strong>
+            <span class="inspector-check-title-row">
+              <strong>${draftCurrent ? "Enabled" : "Disabled"}</strong>
+            </span>
             <small>${escapeHtml(param.name)} ${draftCurrent ? "is active" : "is inactive"}</small>
           </span>
         </label>
@@ -1794,6 +1831,7 @@ function togglePanel(panel) {
     return;
   }
   state.collapsed[panel] = !state.collapsed[panel];
+  persistCollapsedPanels();
   render();
 }
 
