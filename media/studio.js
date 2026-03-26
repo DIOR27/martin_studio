@@ -354,6 +354,7 @@ function render() {
           <p class="section-title">Canvas</p>
           ${renderCanvas()}
         </div>
+        <div class="guide-layer" id="guide-layer"></div>
       </main>
       <aside class="inspector">${renderInspector()}</aside>
       <section class="code-panel">
@@ -374,6 +375,7 @@ function render() {
   bindPaletteDrag();
   bindDropzones();
   bindNodeActions();
+  bindAlignmentGuides();
   bindInspector();
   bindCodeTabs();
   bindGroupActions();
@@ -1570,6 +1572,7 @@ function setDragActive(active) {
     ensureDragAutoScroll();
   } else {
     stopDragAutoScroll();
+    clearGuides();
   }
 }
 
@@ -1762,6 +1765,180 @@ function bindNodeActions() {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       duplicateNode(button.dataset.nodeId);
+    });
+  });
+}
+
+// ── Alignment Guides ─────────────────────────────────────────────
+const SNAP_THRESHOLD = 8;
+let guideElements = [];
+
+function clearGuides() {
+  const layer = document.getElementById("guide-layer");
+  if (layer) {
+    layer.innerHTML = "";
+  }
+  guideElements = [];
+  document.querySelectorAll(".node-card.snap-indicator, .dropzone.snap-target").forEach((el) => {
+    el.classList.remove("snap-indicator", "snap-target");
+  });
+}
+
+function createGuide(type, position) {
+  const layer = document.getElementById("guide-layer");
+  if (!layer) return null;
+  const guide = document.createElement("div");
+  guide.className = `alignment-guide ${type}`;
+  if (type === "horizontal") {
+    guide.style.top = `${position}px`;
+  } else {
+    guide.style.left = `${position}px`;
+  }
+  layer.appendChild(guide);
+  guideElements.push(guide);
+  return guide;
+}
+
+function showAlignmentGuides(draggedRect, canvasRect) {
+  clearGuides();
+  const draggedCenterX = draggedRect.left - canvasRect.left + draggedRect.width / 2;
+  const draggedCenterY = draggedRect.top - canvasRect.top + draggedRect.height / 2;
+  const draggedLeft = draggedRect.left - canvasRect.left;
+  const draggedRight = draggedRect.right - canvasRect.left;
+  const draggedTop = draggedRect.top - canvasRect.top;
+  const draggedBottom = draggedRect.bottom - canvasRect.top;
+
+  document.querySelectorAll(".node-card:not(.is-dragging)").forEach((card) => {
+    const rect = card.getBoundingClientRect();
+    const nodeRect = {
+      left: rect.left - canvasRect.left,
+      right: rect.right - canvasRect.left,
+      top: rect.top - canvasRect.top,
+      bottom: rect.bottom - canvasRect.top,
+      centerX: rect.left - canvasRect.left + rect.width / 2,
+      centerY: rect.top - canvasRect.top + rect.height / 2,
+    };
+
+    // Check for edge alignment
+    const edges = [
+      { pos: nodeRect.left, type: "left" },
+      { pos: nodeRect.right, type: "right" },
+      { pos: nodeRect.centerX, type: "centerX" },
+    ];
+    const vEdges = [
+      { pos: nodeRect.top, type: "top" },
+      { pos: nodeRect.bottom, type: "bottom" },
+      { pos: nodeRect.centerY, type: "centerY" },
+    ];
+
+    for (const edge of edges) {
+      if (Math.abs(draggedLeft - edge.pos) < SNAP_THRESHOLD) {
+        createGuide("vertical", edge.pos);
+        card.classList.add("snap-indicator");
+      }
+      if (Math.abs(draggedRight - edge.pos) < SNAP_THRESHOLD) {
+        createGuide("vertical", edge.pos);
+        card.classList.add("snap-indicator");
+      }
+      if (Math.abs(draggedCenterX - edge.pos) < SNAP_THRESHOLD) {
+        createGuide("vertical", edge.pos);
+        card.classList.add("snap-indicator");
+      }
+    }
+
+    for (const edge of vEdges) {
+      if (Math.abs(draggedTop - edge.pos) < SNAP_THRESHOLD) {
+        createGuide("horizontal", edge.pos);
+        card.classList.add("snap-indicator");
+      }
+      if (Math.abs(draggedBottom - edge.pos) < SNAP_THRESHOLD) {
+        createGuide("horizontal", edge.pos);
+        card.classList.add("snap-indicator");
+      }
+      if (Math.abs(draggedCenterY - edge.pos) < SNAP_THRESHOLD) {
+        createGuide("horizontal", edge.pos);
+        card.classList.add("snap-indicator");
+      }
+    }
+  });
+
+  // Canvas edge guides
+  const canvasPadding = 24;
+  if (Math.abs(draggedLeft - canvasPadding) < SNAP_THRESHOLD) {
+    createGuide("vertical", canvasPadding);
+  }
+  if (Math.abs(draggedRect.width - (canvasRect.width - canvasPadding * 2)) < SNAP_THRESHOLD) {
+    createGuide("vertical", canvasRect.width - canvasPadding);
+    createGuide("vertical", canvasPadding);
+  }
+}
+
+function showGapIndicators(parentNodeId) {
+  const parent = findNodeById(state.design.root, parentNodeId);
+  if (!parent) return;
+  const widget = getWidget(parent.type);
+  if (!widget) return;
+
+  const container = document.querySelector(`.node-card[data-node-id="${parentNodeId}"] .node-children`);
+  if (!container) return;
+
+  const gap = parent.props?.gap;
+  if (!gap) return;
+
+  const children = container.querySelectorAll(":scope > .node-card");
+  if (children.length < 2) return;
+
+  const isRow = parent.type === "Row" || widget.category === "layout";
+
+  children.forEach((child, i) => {
+    if (i === 0) return;
+    const prev = children[i - 1];
+    const rect = child.getBoundingClientRect();
+    const prevRect = prev.getBoundingClientRect();
+
+    const indicator = document.createElement("div");
+    indicator.className = "gap-indicator";
+
+    if (isRow) {
+      const gapPx = rect.left - prevRect.right;
+      indicator.classList.add("horizontal");
+      indicator.style.left = `${prevRect.right}px`;
+      indicator.style.top = `${rect.top}px`;
+      indicator.style.height = `${rect.height}px`;
+      indicator.textContent = `${gapPx}px`;
+    } else {
+      const gapPx = rect.top - prevRect.bottom;
+      indicator.style.left = `${rect.left}px`;
+      indicator.style.top = `${prevRect.bottom}px`;
+      indicator.textContent = `${gapPx}px`;
+    }
+
+    document.getElementById("guide-layer")?.appendChild(indicator);
+  });
+}
+
+function bindAlignmentGuides() {
+  document.querySelectorAll(".node-card").forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      const draggedId = card.dataset.nodeId;
+      const canvas = document.querySelector(".canvas-wrap");
+      if (!canvas) return;
+      const canvasRect = canvas.getBoundingClientRect();
+
+      const onDragMove = (moveEvent) => {
+        if (!state.dragActive) return;
+        const rect = card.getBoundingClientRect();
+        showAlignmentGuides(rect, canvasRect);
+      };
+
+      const onDragEnd = () => {
+        clearGuides();
+        document.removeEventListener("dragover", onDragMove);
+        card.removeEventListener("dragend", onDragEnd);
+      };
+
+      document.addEventListener("dragover", onDragMove);
+      card.addEventListener("dragend", onDragEnd);
     });
   });
 }

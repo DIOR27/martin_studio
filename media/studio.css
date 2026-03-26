@@ -621,6 +621,97 @@ body {
   min-width: 88px;
 }
 
+/* ── Layout Guides & Alignment ────────────────────────────────── */
+.studio-shell {
+  --guide-color: #6366f1;
+  --guide-glow: rgba(99, 102, 241, 0.4);
+  --snap-threshold: 8px;
+  --guide-width: 1px;
+}
+
+.studio-shell.is-drag-active {
+  cursor: grabbing;
+}
+
+.guide-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  overflow: hidden;
+}
+
+.alignment-guide {
+  position: absolute;
+  background: var(--guide-color);
+  box-shadow: 0 0 6px var(--guide-glow);
+  opacity: 0.9;
+  transition: opacity 80ms ease;
+}
+
+.alignment-guide.horizontal {
+  height: var(--guide-width);
+  left: 0;
+  right: 0;
+}
+
+.alignment-guide.vertical {
+  width: var(--guide-width);
+  top: 0;
+  bottom: 0;
+}
+
+.alignment-guide.edge-top { top: 0; }
+.alignment-guide.edge-bottom { bottom: 0; }
+.alignment-guide.edge-left { left: 0; }
+.alignment-guide.edge-right { right: 0; }
+.alignment-guide.edge-center-x {
+  left: 50%;
+  transform: translateX(-50%);
+}
+.alignment-guide.edge-center-y {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.gap-indicator {
+  position: absolute;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px dashed var(--guide-color);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--guide-color);
+  font-weight: 600;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 9001;
+}
+
+.gap-indicator.horizontal {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+}
+
+.node-card.is-dragging {
+  opacity: 0.5;
+  outline: 2px dashed var(--guide-color);
+  outline-offset: 4px;
+}
+
+.node-card.snap-indicator {
+  outline: 2px solid var(--guide-color);
+  outline-offset: 2px;
+  box-shadow: 0 0 12px var(--guide-glow);
+}
+
+.dropzone.snap-target {
+  background: rgba(99, 102, 241, 0.25) !important;
+  border-color: var(--guide-color) !important;
+  transform: scale(1.02);
+}
+
 .props-grid {
   display: grid;
   gap: 12px;
