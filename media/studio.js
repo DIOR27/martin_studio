@@ -1708,47 +1708,60 @@ function bindDropzones() {
 }
 
 function bindNodeActions() {
-  document.querySelectorAll(".node-card.is-draggable").forEach((card) => {
-    card.style.cursor = "grab";
-    card.addEventListener("dragstart", (event) => {
-      setDragActive(true);
-      updateDragPointer(event);
-      event.stopPropagation();
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
-      event.dataTransfer.setData("text/plain", card.dataset.nodeId || "");
-      card.classList.add("is-dragging");
-    });
-    card.addEventListener("dragend", () => {
-      setDragActive(false);
+  const canvas = document.querySelector(".canvas-wrap");
+  if (!canvas) return;
+
+  // Event delegation for drag start on node cards
+  canvas.addEventListener("dragstart", (event) => {
+    const card = event.target.closest(".node-card.is-draggable");
+    if (!card) return;
+    setDragActive(true);
+    updateDragPointer(event);
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
+    event.dataTransfer.setData("text/plain", card.dataset.nodeId || "");
+    card.classList.add("is-dragging");
+  }, true);
+
+  // Event delegation for drag end
+  canvas.addEventListener("dragend", (event) => {
+    const card = event.target.closest(".node-card");
+    if (card) {
       card.classList.remove("is-dragging");
-      document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
-    });
-    card.addEventListener("mousedown", () => {
-      card.style.cursor = "grabbing";
-    });
-    card.addEventListener("mouseup", () => {
-      card.style.cursor = "grab";
-    });
-    card.addEventListener("mouseleave", () => {
-      card.style.cursor = "grab";
-    });
-  });
-  document.querySelectorAll(".node-card").forEach((card) => {
-    card.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (event.target.closest("button")) {
-        return;
-      }
-      state.selectedId = event.currentTarget.dataset.nodeId;
-      render();
-    });
+    }
+    setDragActive(false);
+    document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
+  }, true);
+
+  // Click to select
+  canvas.addEventListener("click", (event) => {
+    const card = event.target.closest(".node-card");
+    if (!card) return;
+    if (event.target.closest("button")) return;
+    state.selectedId = card.dataset.nodeId;
+    render();
+  }, true);
+
+  // Update drag pointer position
+  canvas.addEventListener("dragover", (event) => {
+    updateDragPointer(event);
   });
 
-  const canvas = document.querySelector(".canvas-wrap");
-  if (canvas) {
-    canvas.addEventListener("dragover", updateDragPointer);
-  }
+  // Set cursor style during drag
+  canvas.addEventListener("mousedown", (event) => {
+    const card = event.target.closest(".node-card.is-draggable");
+    if (card) {
+      card.style.cursor = "grabbing";
+    }
+  });
+
+  canvas.addEventListener("mouseup", (event) => {
+    const card = event.target.closest(".node-card.is-draggable");
+    if (card) {
+      card.style.cursor = "grab";
+    }
+  });
 
   document.querySelectorAll('[data-action="delete-node"]').forEach((button) => {
     button.addEventListener("click", (event) => {
