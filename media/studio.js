@@ -2413,11 +2413,25 @@ function addCollectionItem(nodeId, propName) {
     if (Object.prototype.hasOwnProperty.call(field, "default")) {
       item[field.name] = clone(field.default);
     } else if (field.required) {
-      if (field.type === "string") item[field.name] = field.name === "title" ? "New Event" : "";
-      else if (field.type === "date") item[field.name] = new Date().toISOString().split("T")[0];
-      else if (field.type === "color") item[field.name] = "#6366f1";
-      else if (field.type === "boolean") item[field.name] = false;
-      else item[field.name] = "";
+      if (field.type === "string") {
+        if (field.name === "title") item[field.name] = "New Item";
+        else if (field.name === "name") item[field.name] = "New Name";
+        else if (field.name === "question") item[field.name] = "New Question";
+        else if (field.name === "src") item[field.name] = "/assets/image.jpg";
+        else item[field.name] = "";
+      } else if (field.type === "date") {
+        item[field.name] = new Date().toISOString().split("T")[0];
+      } else if (field.type === "color") {
+        item[field.name] = "#6366f1";
+      } else if (field.type === "boolean") {
+        item[field.name] = false;
+      } else if (field.type === "integer" || field.type === "float") {
+        if (field.name === "price") item[field.name] = 0;
+        else if (field.name === "rating") item[field.name] = 5;
+        else item[field.name] = 1;
+      } else {
+        item[field.name] = "";
+      }
     } else if (field.type === "color") {
       item[field.name] = "#6366f1";
     } else if (field.type === "boolean") {
@@ -3201,6 +3215,24 @@ function getRequiredImports(design) {
   if (imports.has("Calendar")) {
     imports.add("CalendarEvent");
   }
+  if (imports.has("Accordion")) {
+    imports.add("AccordionItem");
+  }
+  if (imports.has("Gallery")) {
+    imports.add("GalleryItem");
+  }
+  if (imports.has("Carousel")) {
+    imports.add("CarouselItem");
+  }
+  if (imports.has("Testimonials")) {
+    imports.add("TestimonialItem");
+  }
+  if (imports.has("Pricing")) {
+    imports.add("PricingPlan");
+  }
+  if (imports.has("FAQ")) {
+    imports.add("FAQItem");
+  }
   return Array.from(imports);
 }
 
@@ -3269,6 +3301,24 @@ function pyPropValue(widgetType, propName, value, depth) {
   if (widgetType === "Calendar" && propName === "events" && Array.isArray(value)) {
     return pyCalendarEvents(value, depth);
   }
+  if (widgetType === "Accordion" && propName === "items" && Array.isArray(value)) {
+    return pyAccordionItems(value, depth);
+  }
+  if (widgetType === "Gallery" && propName === "items" && Array.isArray(value)) {
+    return pyGalleryItems(value, depth);
+  }
+  if (widgetType === "Carousel" && propName === "items" && Array.isArray(value)) {
+    return pyCarouselItems(value, depth);
+  }
+  if (widgetType === "Testimonials" && propName === "items" && Array.isArray(value)) {
+    return pyTestimonialItems(value, depth);
+  }
+  if (widgetType === "Pricing" && propName === "plans" && Array.isArray(value)) {
+    return pyPricingPlans(value, depth);
+  }
+  if (widgetType === "FAQ" && propName === "items" && Array.isArray(value)) {
+    return pyFAQItems(value, depth);
+  }
   return pyValue(value, depth);
 }
 
@@ -3299,6 +3349,103 @@ function pyCalendarEvent(event, depth) {
     return `CalendarEvent(title=${pyValue("Event", depth + 1)}, date=${pyValue(new Date().toISOString().split("T")[0], depth + 1)})`;
   }
   return `CalendarEvent(${fields.join(", ")})`;
+}
+
+function pyAccordionItems(items, depth) {
+  if (!items || !items.length) return "[]";
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  return `[\n${items.map((item) => {
+    if (!item || typeof item !== "object") return pyValue(item, depth + 1);
+    const fields = [];
+    if (item.title) fields.push(`title=${pyValue(item.title, depth + 1)}`);
+    if (item.content) fields.push(`content=${pyValue(item.content, depth + 1)}`);
+    if (item.open) fields.push(`open=True`);
+    return `${indent}AccordionItem(${fields.join(", ")})`;
+  }).join(",\n")}\n${closingIndent}]`;
+}
+
+function pyGalleryItems(items, depth) {
+  if (!items || !items.length) return "[]";
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  return `[\n${items.map((item) => {
+    if (!item || typeof item !== "object") return pyValue(item, depth + 1);
+    const fields = [];
+    if (item.src) fields.push(pyValue(item.src, depth + 1));
+    if (item.title) fields.push(`title=${pyValue(item.title, depth + 1)}`);
+    if (item.description) fields.push(`description=${pyValue(item.description, depth + 1)}`);
+    if (item.alt) fields.push(`alt=${pyValue(item.alt, depth + 1)}`);
+    if (item.url) fields.push(`url=${pyValue(item.url, depth + 1)}`);
+    if (item.span_cols && item.span_cols !== 1) fields.push(`span_cols=${item.span_cols}`);
+    if (item.span_rows && item.span_rows !== 1) fields.push(`span_rows=${item.span_rows}`);
+    return `${indent}GalleryItem(${fields.join(", ")})`;
+  }).join(",\n")}\n${closingIndent}]`;
+}
+
+function pyCarouselItems(items, depth) {
+  if (!items || !items.length) return "[]";
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  return `[\n${items.map((item) => {
+    if (!item || typeof item !== "object") return pyValue(item, depth + 1);
+    const fields = [];
+    if (item.image) fields.push(`image=${pyValue(item.image, depth + 1)}`);
+    if (item.title) fields.push(`title=${pyValue(item.title, depth + 1)}`);
+    if (item.subtitle) fields.push(`subtitle=${pyValue(item.subtitle, depth + 1)}`);
+    if (item.url) fields.push(`url=${pyValue(item.url, depth + 1)}`);
+    return `${indent}CarouselItem(${fields.join(", ")})`;
+  }).join(",\n")}\n${closingIndent}]`;
+}
+
+function pyTestimonialItems(items, depth) {
+  if (!items || !items.length) return "[]";
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  return `[\n${items.map((item) => {
+    if (!item || typeof item !== "object") return pyValue(item, depth + 1);
+    const fields = [];
+    if (item.name) fields.push(`name=${pyValue(item.name, depth + 1)}`);
+    if (item.text) fields.push(`text=${pyValue(item.text, depth + 1)}`);
+    if (item.role) fields.push(`role=${pyValue(item.role, depth + 1)}`);
+    if (item.avatar) fields.push(`avatar=${pyValue(item.avatar, depth + 1)}`);
+    if (item.rating) fields.push(`rating=${item.rating}`);
+    return `${indent}TestimonialItem(${fields.join(", ")})`;
+  }).join(",\n")}\n${closingIndent}]`;
+}
+
+function pyPricingPlans(items, depth) {
+  if (!items || !items.length) return "[]";
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  return `[\n${items.map((item) => {
+    if (!item || typeof item !== "object") return pyValue(item, depth + 1);
+    const fields = [];
+    if (item.name) fields.push(pyValue(item.name, depth + 1));
+    if (item.price !== undefined) fields.push(item.price);
+    if (item.currency && item.currency !== "$") fields.push(`currency=${pyValue(item.currency, depth + 1)}`);
+    if (item.period && item.period !== "mes") fields.push(`period=${pyValue(item.period, depth + 1)}`);
+    if (item.description) fields.push(`description=${pyValue(item.description, depth + 1)}`);
+    if (item.cta_label) fields.push(`cta_label=${pyValue(item.cta_label, depth + 1)}`);
+    if (item.cta_url && item.cta_url !== "#") fields.push(`cta_url=${pyValue(item.cta_url, depth + 1)}`);
+    if (item.featured) fields.push(`featured=True`);
+    if (item.badge) fields.push(`badge=${pyValue(item.badge, depth + 1)}`);
+    return `${indent}PricingPlan(${fields.join(", ")})`;
+  }).join(",\n")}\n${closingIndent}]`;
+}
+
+function pyFAQItems(items, depth) {
+  if (!items || !items.length) return "[]";
+  const indent = "    ".repeat(depth);
+  const closingIndent = "    ".repeat(Math.max(depth - 1, 0));
+  return `[\n${items.map((item) => {
+    if (!item || typeof item !== "object") return pyValue(item, depth + 1);
+    const fields = [];
+    if (item.question) fields.push(pyValue(item.question, depth + 1));
+    if (item.answer) fields.push(`answer=${pyValue(item.answer, depth + 1)}`);
+    if (item.open) fields.push(`open=True`);
+    return `${indent}FAQItem(${fields.join(", ")})`;
+  }).join(",\n")}\n${closingIndent}]`;
 }
 
 function pyMartinExpr(value, depth) {
