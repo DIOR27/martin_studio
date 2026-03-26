@@ -1707,33 +1707,33 @@ function bindDropzones() {
 }
 
 function bindNodeActions() {
-  document.querySelectorAll(".node-card").forEach((card) => {
-    if (card.getAttribute("draggable") === "true") {
+  document.querySelectorAll(".node-card.is-draggable").forEach((card) => {
+    card.style.cursor = "grab";
+    card.addEventListener("dragstart", (event) => {
+      setDragActive(true);
+      updateDragPointer(event);
+      event.stopPropagation();
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
+      event.dataTransfer.setData("text/plain", card.dataset.nodeId || "");
+      card.classList.add("is-dragging");
+    });
+    card.addEventListener("dragend", () => {
+      setDragActive(false);
+      card.classList.remove("is-dragging");
+      document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
+    });
+    card.addEventListener("mousedown", () => {
+      card.style.cursor = "grabbing";
+    });
+    card.addEventListener("mouseup", () => {
       card.style.cursor = "grab";
-      card.addEventListener("dragstart", (event) => {
-        setDragActive(true);
-        updateDragPointer(event);
-        event.stopPropagation();
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("application/martin-node", card.dataset.nodeId);
-        event.dataTransfer.setData("text/plain", card.dataset.nodeId || "");
-        card.classList.add("is-dragging");
-      });
-      card.addEventListener("dragend", () => {
-        setDragActive(false);
-        card.classList.remove("is-dragging");
-        document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
-      });
-      card.addEventListener("mousedown", () => {
-        card.style.cursor = "grabbing";
-      });
-      card.addEventListener("mouseup", () => {
-        card.style.cursor = "grab";
-      });
-      card.addEventListener("mouseleave", () => {
-        card.style.cursor = "grab";
-      });
-    }
+    });
+    card.addEventListener("mouseleave", () => {
+      card.style.cursor = "grab";
+    });
+  });
+  document.querySelectorAll(".node-card").forEach((card) => {
     card.addEventListener("click", (event) => {
       event.stopPropagation();
       if (event.target.closest("button")) {
@@ -1918,29 +1918,19 @@ function showGapIndicators(parentNodeId) {
 }
 
 function bindAlignmentGuides() {
-  document.querySelectorAll(".node-card").forEach((card) => {
-    card.addEventListener("dragstart", (e) => {
-      const draggedId = card.dataset.nodeId;
-      const canvas = document.querySelector(".canvas-wrap");
-      if (!canvas) return;
-      const canvasRect = canvas.getBoundingClientRect();
+  const canvas = document.querySelector(".canvas-wrap");
+  if (!canvas) return;
+  const canvasRect = canvas.getBoundingClientRect();
 
-      const onDragMove = (moveEvent) => {
-        if (!state.dragActive) return;
-        const rect = card.getBoundingClientRect();
-        showAlignmentGuides(rect, canvasRect);
-      };
+  const onDragMove = (e) => {
+    if (!state.dragActive) return;
+    const draggedCard = document.querySelector(".node-card.is-dragging");
+    if (!draggedCard) return;
+    const rect = draggedCard.getBoundingClientRect();
+    showAlignmentGuides(rect, canvasRect);
+  };
 
-      const onDragEnd = () => {
-        clearGuides();
-        document.removeEventListener("dragover", onDragMove);
-        card.removeEventListener("dragend", onDragEnd);
-      };
-
-      document.addEventListener("dragover", onDragMove);
-      card.addEventListener("dragend", onDragEnd);
-    });
-  });
+  document.addEventListener("dragover", onDragMove);
 }
 
 function normalizeConditionValue(rawValue) {
