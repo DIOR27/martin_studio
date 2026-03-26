@@ -1678,55 +1678,18 @@ function bindPaletteDrag() {
 }
 
 function bindDropzones() {
-  if (bindDropzones.bound) return;
-  bindDropzones.bound = true;
-
-  document.querySelectorAll(".dropzone").forEach((zone) => {
-    zone.addEventListener("dragover", (event) => {
-      if (!canHandleDrop(event, zone)) {
-        return;
-      }
-      event.preventDefault();
-      updateDragPointer(event);
-      zone.classList.add("is-over");
-    });
-    zone.addEventListener("dragleave", () => zone.classList.remove("is-over"));
-    zone.addEventListener("drop", (event) => {
-      event.preventDefault();
-      zone.classList.remove("is-over");
-      const widgetName = event.dataTransfer.getData("application/martin-widget");
-      const nodeId = event.dataTransfer.getData("application/martin-node");
-      const dropIndex = Number(zone.dataset.dropIndex ?? -1);
-      console.log("drop:", { widgetName, nodeId, dropIndex, parent: zone.dataset.dropParent });
-      if (widgetName) {
-        setDragActive(false);
-        addNode(zone.dataset.dropParent, widgetName, dropIndex);
-        return;
-      }
-      if (nodeId) {
-        setDragActive(false);
-        moveNode(nodeId, zone.dataset.dropParent, dropIndex);
-      }
-    });
-  });
+  // Delegated to canvas-wrap in bindNodeActions
 }
 
 function bindNodeActions() {
   const canvas = document.querySelector(".canvas-wrap");
   if (!canvas) return;
 
-  // Prevent duplicate listeners - bind only once
-  if (bindNodeActions.bound) return;
-  bindNodeActions.bound = true;
-
-  let draggedNodeId = null;
-
-  // Event delegation for drag start on node cards
+  // All drag/drop/click events delegated from canvas
   canvas.addEventListener("dragstart", (event) => {
     const card = event.target.closest(".node-card.is-draggable");
     if (!card) return;
     console.log("dragstart:", card.dataset.nodeId);
-    draggedNodeId = card.dataset.nodeId;
     setDragActive(true);
     updateDragPointer(event);
     event.stopPropagation();
@@ -1736,61 +1699,69 @@ function bindNodeActions() {
     card.classList.add("is-dragging");
   }, true);
 
-  // Event delegation for drag end - on document to catch it even after re-render
+  canvas.addEventListener("dragover", (event) => {
+    // Check if over a dropzone
+    const zone = event.target.closest(".dropzone");
+    if (zone) {
+      if (!canHandleDrop(event, zone)) return;
+      event.preventDefault();
+      updateDragPointer(event);
+      zone.classList.add("is-over");
+    }
+  });
+
+  canvas.addEventListener("dragleave", (event) => {
+    const zone = event.target.closest(".dropzone");
+    if (zone) {
+      zone.classList.remove("is-over");
+    }
+  });
+
+  canvas.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const zone = event.target.closest(".dropzone");
+    if (!zone) return;
+    zone.classList.remove("is-over");
+    const widgetName = event.dataTransfer.getData("application/martin-widget");
+    const nodeId = event.dataTransfer.getData("application/martin-node");
+    const dropIndex = Number(zone.dataset.dropIndex ?? -1);
+    console.log("drop:", { widgetName, nodeId, dropIndex, parent: zone.dataset.dropParent });
+    if (widgetName) {
+      setDragActive(false);
+      addNode(zone.dataset.dropParent, widgetName, dropIndex);
+      return;
+    }
+    if (nodeId) {
+      setDragActive(false);
+      moveNode(nodeId, zone.dataset.dropParent, dropIndex);
+    }
+  });
+
+  // Drag end on document to catch after re-render
   document.addEventListener("dragend", (event) => {
     setDragActive(false);
     document.querySelectorAll(".is-dragging").forEach((el) => el.classList.remove("is-dragging"));
     document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
-    draggedNodeId = null;
   });
 
   // Click to select
   canvas.addEventListener("click", (event) => {
     const card = event.target.closest(".node-card");
     if (!card) return;
+    // Handle action buttons
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action) {
+      event.stopPropagation();
+      const nodeId = event.target.closest("[data-node-id]")?.dataset.nodeId;
+      if (action === "delete-node") deleteNode(nodeId);
+      else if (action === "duplicate-node") duplicateNode(nodeId);
+      else if (action === "toggle-node-collapse") toggleNodeCollapse(nodeId);
+      return;
+    }
     if (event.target.closest("button")) return;
     state.selectedId = card.dataset.nodeId;
     render();
   }, true);
-
-  // Update drag pointer position
-  canvas.addEventListener("dragover", (event) => {
-    updateDragPointer(event);
-  });
-
-  // Set cursor style during drag
-  canvas.addEventListener("mousedown", (event) => {
-    const card = event.target.closest(".node-card.is-draggable");
-    if (card) {
-      card.style.cursor = "grabbing";
-    }
-  });
-
-  canvas.addEventListener("mouseup", (event) => {
-    const card = event.target.closest(".node-card.is-draggable");
-    if (card) {
-      card.style.cursor = "grab";
-    }
-  });
-
-  document.querySelectorAll('[data-action="delete-node"]').forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      deleteNode(button.dataset.nodeId);
-    });
-  });
-  document.querySelectorAll('[data-action="toggle-node-collapse"]').forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      toggleNodeCollapse(button.dataset.nodeId);
-    });
-  });
-  document.querySelectorAll('[data-action="duplicate-node"]').forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      duplicateNode(button.dataset.nodeId);
-    });
-  });
 }
 
 // ── Alignment Guides ─────────────────────────────────────────────
@@ -1898,16 +1869,11 @@ function showAlignmentGuides(draggedRect, canvasRect) {
 }
 
 function bindAlignmentGuides() {
-  if (bindAlignmentGuides.bound) return;
-  bindAlignmentGuides.bound = true;
-
-  // Reusable canvas reference
-  let canvas = null;
   let canvasRect = null;
 
   const onDragMove = () => {
     if (!state.dragActive) return;
-    if (!canvas) canvas = document.querySelector(".canvas-wrap");
+    const canvas = document.querySelector(".canvas-wrap");
     if (!canvas) return;
     canvasRect = canvas.getBoundingClientRect();
 
