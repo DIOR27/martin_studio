@@ -1572,6 +1572,7 @@ function setDragActive(active) {
     ensureDragAutoScroll();
   } else {
     stopDragAutoScroll();
+    lastGuideUpdate = 0;
     clearGuides();
   }
 }
@@ -1772,6 +1773,8 @@ function bindNodeActions() {
 // ── Alignment Guides ─────────────────────────────────────────────
 const SNAP_THRESHOLD = 8;
 let guideElements = [];
+let lastGuideUpdate = 0;
+const GUIDE_THROTTLE = 16; // ~60fps max
 
 function clearGuides() {
   const layer = document.getElementById("guide-layer");
@@ -1779,8 +1782,8 @@ function clearGuides() {
     layer.innerHTML = "";
   }
   guideElements = [];
-  document.querySelectorAll(".node-card.snap-indicator, .dropzone.snap-target").forEach((el) => {
-    el.classList.remove("snap-indicator", "snap-target");
+  document.querySelectorAll(".node-card.snap-indicator").forEach((el) => {
+    el.classList.remove("snap-indicator");
   });
 }
 
@@ -1800,13 +1803,22 @@ function createGuide(type, position) {
 }
 
 function showAlignmentGuides(draggedRect, canvasRect) {
+  const now = performance.now();
+  if (now - lastGuideUpdate < GUIDE_THROTTLE) return;
+  lastGuideUpdate = now;
+
   clearGuides();
-  const draggedCenterX = draggedRect.left - canvasRect.left + draggedRect.width / 2;
-  const draggedCenterY = draggedRect.top - canvasRect.top + draggedRect.height / 2;
+
   const draggedLeft = draggedRect.left - canvasRect.left;
   const draggedRight = draggedRect.right - canvasRect.left;
   const draggedTop = draggedRect.top - canvasRect.top;
   const draggedBottom = draggedRect.bottom - canvasRect.top;
+  const draggedCenterX = draggedLeft + draggedRect.width / 2;
+  const draggedCenterY = draggedTop + draggedRect.height / 2;
+
+  // Cache widget rects
+  const widgetRects = [];
+  const snapIndicators = new Set();
 
   document.querySelectorAll(".node-card:not(.is-dragging)").forEach((card) => {
     const rect = card.getBoundingClientRect();
@@ -1818,112 +1830,61 @@ function showAlignmentGuides(draggedRect, canvasRect) {
       centerX: rect.left - canvasRect.left + rect.width / 2,
       centerY: rect.top - canvasRect.top + rect.height / 2,
     };
+    widgetRects.push({ card, rect: nodeRect });
+  });
 
-    // Check for edge alignment
+  // Check alignments
+  for (const { card, rect } of widgetRects) {
     const edges = [
-      { pos: nodeRect.left, type: "left" },
-      { pos: nodeRect.right, type: "right" },
-      { pos: nodeRect.centerX, type: "centerX" },
+      { pos: rect.left, key: "left" },
+      { pos: rect.right, key: "right" },
+      { pos: rect.centerX, key: "centerX" },
     ];
     const vEdges = [
-      { pos: nodeRect.top, type: "top" },
-      { pos: nodeRect.bottom, type: "bottom" },
-      { pos: nodeRect.centerY, type: "centerY" },
+      { pos: rect.top, key: "top" },
+      { pos: rect.bottom, key: "bottom" },
+      { pos: rect.centerY, key: "centerY" },
     ];
 
-    for (const edge of edges) {
-      if (Math.abs(draggedLeft - edge.pos) < SNAP_THRESHOLD) {
-        createGuide("vertical", edge.pos);
-        card.classList.add("snap-indicator");
-      }
-      if (Math.abs(draggedRight - edge.pos) < SNAP_THRESHOLD) {
-        createGuide("vertical", edge.pos);
-        card.classList.add("snap-indicator");
-      }
-      if (Math.abs(draggedCenterX - edge.pos) < SNAP_THRESHOLD) {
-        createGuide("vertical", edge.pos);
-        card.classList.add("snap-indicator");
+    let aligned = false;
+    for (const edge of [...edges, ...vEdges]) {
+      if (
+        Math.abs(draggedLeft - edge.pos) < SNAP_THRESHOLD ||
+        Math.abs(draggedRight - edge.pos) < SNAP_THRESHOLD ||
+        Math.abs(draggedCenterX - edge.pos) < SNAP_THRESHOLD ||
+        Math.abs(draggedTop - edge.pos) < SNAP_THRESHOLD ||
+        Math.abs(draggedBottom - edge.pos) < SNAP_THRESHOLD ||
+        Math.abs(draggedCenterY - edge.pos) < SNAP_THRESHOLD
+      ) {
+        snapIndicators.add(card);
+        aligned = true;
+        const guideType = edge.key.includes("X") || edge.key === "left" || edge.key === "right" ? "vertical" : "horizontal";
+        createGuide(guideType, edge.pos);
+        break;
       }
     }
+  }
 
-    for (const edge of vEdges) {
-      if (Math.abs(draggedTop - edge.pos) < SNAP_THRESHOLD) {
-        createGuide("horizontal", edge.pos);
-        card.classList.add("snap-indicator");
-      }
-      if (Math.abs(draggedBottom - edge.pos) < SNAP_THRESHOLD) {
-        createGuide("horizontal", edge.pos);
-        card.classList.add("snap-indicator");
-      }
-      if (Math.abs(draggedCenterY - edge.pos) < SNAP_THRESHOLD) {
-        createGuide("horizontal", edge.pos);
-        card.classList.add("snap-indicator");
-      }
-    }
-  });
+  snapIndicators.forEach((card) => card.classList.add("snap-indicator"));
 
   // Canvas edge guides
   const canvasPadding = 24;
   if (Math.abs(draggedLeft - canvasPadding) < SNAP_THRESHOLD) {
     createGuide("vertical", canvasPadding);
   }
-  if (Math.abs(draggedRect.width - (canvasRect.width - canvasPadding * 2)) < SNAP_THRESHOLD) {
-    createGuide("vertical", canvasRect.width - canvasPadding);
-    createGuide("vertical", canvasPadding);
-  }
-}
-
-function showGapIndicators(parentNodeId) {
-  const parent = findNodeById(state.design.root, parentNodeId);
-  if (!parent) return;
-  const widget = getWidget(parent.type);
-  if (!widget) return;
-
-  const container = document.querySelector(`.node-card[data-node-id="${parentNodeId}"] .node-children`);
-  if (!container) return;
-
-  const gap = parent.props?.gap;
-  if (!gap) return;
-
-  const children = container.querySelectorAll(":scope > .node-card");
-  if (children.length < 2) return;
-
-  const isRow = parent.type === "Row" || widget.category === "layout";
-
-  children.forEach((child, i) => {
-    if (i === 0) return;
-    const prev = children[i - 1];
-    const rect = child.getBoundingClientRect();
-    const prevRect = prev.getBoundingClientRect();
-
-    const indicator = document.createElement("div");
-    indicator.className = "gap-indicator";
-
-    if (isRow) {
-      const gapPx = rect.left - prevRect.right;
-      indicator.classList.add("horizontal");
-      indicator.style.left = `${prevRect.right}px`;
-      indicator.style.top = `${rect.top}px`;
-      indicator.style.height = `${rect.height}px`;
-      indicator.textContent = `${gapPx}px`;
-    } else {
-      const gapPx = rect.top - prevRect.bottom;
-      indicator.style.left = `${rect.left}px`;
-      indicator.style.top = `${prevRect.bottom}px`;
-      indicator.textContent = `${gapPx}px`;
-    }
-
-    document.getElementById("guide-layer")?.appendChild(indicator);
-  });
 }
 
 function bindAlignmentGuides() {
-  const canvas = document.querySelector(".canvas-wrap");
-  if (!canvas) return;
-  const canvasRect = canvas.getBoundingClientRect();
+  // Reusable canvas reference
+  let canvas = null;
+  let canvasRect = null;
 
-  const onDragMove = (e) => {
+  const onDragMove = () => {
     if (!state.dragActive) return;
+    if (!canvas) canvas = document.querySelector(".canvas-wrap");
+    if (!canvas) return;
+    canvasRect = canvas.getBoundingClientRect();
+
     const draggedCard = document.querySelector(".node-card.is-dragging");
     if (!draggedCard) return;
     const rect = draggedCard.getBoundingClientRect();
