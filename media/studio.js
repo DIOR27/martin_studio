@@ -1694,6 +1694,7 @@ function bindDropzones() {
       const widgetName = event.dataTransfer.getData("application/martin-widget");
       const nodeId = event.dataTransfer.getData("application/martin-node");
       const dropIndex = Number(zone.dataset.dropIndex ?? -1);
+      console.log("drop:", { widgetName, nodeId, dropIndex, parent: zone.dataset.dropParent });
       if (widgetName) {
         setDragActive(false);
         addNode(zone.dataset.dropParent, widgetName, dropIndex);
@@ -1711,10 +1712,17 @@ function bindNodeActions() {
   const canvas = document.querySelector(".canvas-wrap");
   if (!canvas) return;
 
+  let draggedNodeId = null;
+
   // Event delegation for drag start on node cards
   canvas.addEventListener("dragstart", (event) => {
     const card = event.target.closest(".node-card.is-draggable");
-    if (!card) return;
+    if (!card) {
+      console.log("dragstart: no card found", event.target);
+      return;
+    }
+    console.log("dragstart:", card.dataset.nodeId);
+    draggedNodeId = card.dataset.nodeId;
     setDragActive(true);
     updateDragPointer(event);
     event.stopPropagation();
@@ -1724,15 +1732,13 @@ function bindNodeActions() {
     card.classList.add("is-dragging");
   }, true);
 
-  // Event delegation for drag end
-  canvas.addEventListener("dragend", (event) => {
-    const card = event.target.closest(".node-card");
-    if (card) {
-      card.classList.remove("is-dragging");
-    }
+  // Event delegation for drag end - on document to catch it even after re-render
+  document.addEventListener("dragend", (event) => {
     setDragActive(false);
+    document.querySelectorAll(".is-dragging").forEach((el) => el.classList.remove("is-dragging"));
     document.querySelectorAll(".dropzone.is-over").forEach((zone) => zone.classList.remove("is-over"));
-  }, true);
+    draggedNodeId = null;
+  });
 
   // Click to select
   canvas.addEventListener("click", (event) => {
