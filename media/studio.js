@@ -1678,6 +1678,9 @@ function bindPaletteDrag() {
 }
 
 function bindDropzones() {
+  if (bindDropzones.bound) return;
+  bindDropzones.bound = true;
+
   document.querySelectorAll(".dropzone").forEach((zone) => {
     zone.addEventListener("dragover", (event) => {
       if (!canHandleDrop(event, zone)) {
@@ -1712,15 +1715,16 @@ function bindNodeActions() {
   const canvas = document.querySelector(".canvas-wrap");
   if (!canvas) return;
 
+  // Prevent duplicate listeners - bind only once
+  if (bindNodeActions.bound) return;
+  bindNodeActions.bound = true;
+
   let draggedNodeId = null;
 
   // Event delegation for drag start on node cards
   canvas.addEventListener("dragstart", (event) => {
     const card = event.target.closest(".node-card.is-draggable");
-    if (!card) {
-      console.log("dragstart: no card found", event.target);
-      return;
-    }
+    if (!card) return;
     console.log("dragstart:", card.dataset.nodeId);
     draggedNodeId = card.dataset.nodeId;
     setDragActive(true);
@@ -1894,6 +1898,9 @@ function showAlignmentGuides(draggedRect, canvasRect) {
 }
 
 function bindAlignmentGuides() {
+  if (bindAlignmentGuides.bound) return;
+  bindAlignmentGuides.bound = true;
+
   // Reusable canvas reference
   let canvas = null;
   let canvasRect = null;
