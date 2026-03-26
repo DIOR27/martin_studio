@@ -2410,11 +2410,23 @@ function addCollectionItem(nodeId, propName) {
   }
   const item = {};
   for (const field of param.editor.fields || []) {
-    if (Object.prototype.hasOwnProperty.call(field, "default")) item[field.name] = clone(field.default);
-    else if (field.type === "color") item[field.name] = "#6366f1";
-    else if (field.type === "boolean") item[field.name] = false;
-    else if (field.type === "integer" || field.type === "float") item[field.name] = "";
-    else item[field.name] = "";
+    if (Object.prototype.hasOwnProperty.call(field, "default")) {
+      item[field.name] = clone(field.default);
+    } else if (field.required) {
+      if (field.type === "string") item[field.name] = field.name === "title" ? "New Event" : "";
+      else if (field.type === "date") item[field.name] = new Date().toISOString().split("T")[0];
+      else if (field.type === "color") item[field.name] = "#6366f1";
+      else if (field.type === "boolean") item[field.name] = false;
+      else item[field.name] = "";
+    } else if (field.type === "color") {
+      item[field.name] = "#6366f1";
+    } else if (field.type === "boolean") {
+      item[field.name] = false;
+    } else if (field.type === "integer" || field.type === "float") {
+      item[field.name] = "";
+    } else {
+      item[field.name] = "";
+    }
   }
   const current = Array.isArray(node.props?.[propName]) ? clone(node.props[propName]) : clone(widget.preset_props?.[propName] || []);
   const newIndex = current.length;
@@ -2867,7 +2879,54 @@ function syncCollectionDatePair(field) {
   }
 }
 
+function validateDesign(node, errors) {
+  if (!node) return;
+  const widget = getWidget(node.type);
+  if (widget && widget.params) {
+    for (const param of widget.params) {
+      if (param.required) {
+        const value = node.props?.[param.name];
+        if (value === undefined || value === null || value === "") {
+          errors.push({
+            nodeId: node.id,
+            widget: node.type,
+            prop: param.name,
+            message: `Required field "${param.name}" is missing in ${node.type}`,
+          });
+        }
+      }
+    }
+  }
+  if (node.type === "Calendar" && Array.isArray(node.props?.events)) {
+    const requiredEventFields = { title: true, date: true };
+    for (let i = 0; i < node.props.events.length; i++) {
+      const event = node.props.events[i];
+      for (const field of Object.keys(requiredEventFields)) {
+        if (!event || !event[field] || event[field] === "") {
+          errors.push({
+            nodeId: node.id,
+            widget: "Calendar",
+            prop: `events[${i}].${field}`,
+            message: `Calendar event ${i + 1} is missing required field "${field}"`,
+          });
+        }
+      }
+    }
+  }
+  for (const child of node.children || []) {
+    validateDesign(child, errors);
+  }
+}
+
 function saveDesign() {
+  const errors = [];
+  validateDesign(state.design?.root, errors);
+  if (errors.length > 0) {
+    const errorList = errors.slice(0, 5).map((e) => e.message).join("\n");
+    const more = errors.length > 5 ? `\n... and ${errors.length - 5} more errors` : "";
+    alert(`Cannot save: ${errors.length} validation error(s):\n${errorList}${more}`);
+    return;
+  }
   vscode.postMessage({
     type: "saveDesign",
     payload: {
@@ -3228,13 +3287,16 @@ function pyCalendarEvent(event, depth) {
   }
   const fields = [];
   const orderedKeys = ["title", "date", "start_time", "end_time", "color", "description", "all_day", "url"];
+  const requiredKeys = ["title", "date"];
   for (const key of orderedKeys) {
     if (event[key] !== undefined && event[key] !== null && event[key] !== "") {
       fields.push(`${key}=${pyValue(event[key], depth + 1)}`);
+    } else if (requiredKeys.includes(key)) {
+      fields.push(`${key}=${pyValue(event[key] || "", depth + 1)}`);
     }
   }
   if (!fields.length) {
-    return "CalendarEvent()";
+    return `CalendarEvent(title=${pyValue("Event", depth + 1)}, date=${pyValue(new Date().toISOString().split("T")[0], depth + 1)})`;
   }
   return `CalendarEvent(${fields.join(", ")})`;
 }
